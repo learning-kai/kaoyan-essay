@@ -1040,24 +1040,6 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
 .sent.first .en .word.peek::after { color: transparent; }
 .sent.first .en .punct { color: var(--ink); }
 
-/* 逐块背诵：色块盖住英文，点一下显影 */
-.sent.block .en {
-  cursor: pointer;
-  color: transparent;
-  background: rgba(226,88,43,.82);
-  border-radius: 2px;
-  transition: background .2s ease, color .2s ease;
-  user-select: none;
-}
-.sent.block .en:hover { background: rgba(226,88,43,.95); }
-.sent.block.revealed .en {
-  color: var(--ink);
-  background: transparent;
-  cursor: default;
-  user-select: text;
-}
-.sent.block.revealed:hover .en { background: transparent; }
-
 /* 悬停朗读按钮 */
 .speak-btn {
   position: absolute;
@@ -1123,28 +1105,55 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
   gap: 12px;
 }
 
-/* 空块 */
-.blank-block {
+/* 填空拼写：可直接打字的横线 */
+.blank-tip {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.9;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+.blank-tip kbd { margin: 0 2px; }
+
+.blank-input {
   display: inline-block;
-  vertical-align: middle;
-  position: relative;
-  top: -2px;
-}
-.blank-block .word {
-  color: transparent;
-  background: rgba(34,27,20,.08);
-  border-bottom: 1.5px solid rgba(34,27,20,.45);
-  border-radius: 2px;
-  padding: 0 2px;
-  margin: 0 1px;
-  cursor: pointer;
-  transition: background .16s, color .16s;
-}
-.blank-block .word:hover { background: var(--solar); color: #fff8ee; }
-.blank-block.solved .word {
+  vertical-align: baseline;
+  width: auto;
+  min-width: 2.2em;
+  margin: 0 3px;
+  padding: 0 4px 1px;
+  font-family: var(--serif);
+  font-size: inherit;
+  line-height: 1.25;
   color: var(--solar-deep);
-  background: rgba(226,88,43,.12);
+  background: rgba(226,88,43,.07);
+  border: 0;
+  border-bottom: 2px solid rgba(226,88,43,.55);
+  border-radius: 2px 2px 0 0;
+  text-align: center;
+  transition: background .16s, border-color .16s, color .16s;
+}
+.blank-input:focus {
+  outline: none;
+  background: #fffdf7;
   border-bottom-color: var(--solar);
+}
+.blank-input.ok {
+  color: var(--ok);
+  background: rgba(31,111,74,.1);
+  border-bottom-color: var(--ok);
+}
+.blank-input.bad {
+  color: var(--bad);
+  background: rgba(180,54,31,.08);
+  border-bottom-color: var(--bad);
+  animation: shake .28s ease;
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
 }
 
 /* 整篇默写 */

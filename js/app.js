@@ -24,9 +24,8 @@
     ['hide', '只显中文', 'II'],
     ['first', '首字母', 'III'],
     ['blur', '模糊显影', 'IV'],
-    ['block', '逐块背诵', 'V'],
-    ['blank', '填空默写', 'VI'],
-    ['type', '整篇默写', 'VII']
+    ['blank', '填空拼写', 'V'],
+    ['type', '整篇默写', 'VI']
   ];
   const SIZES = { s: 'calc(var(--fs) * .86)', m: 'var(--fs)', l: 'calc(var(--fs) * 1.22)' };
 
@@ -579,11 +578,17 @@
 
     if (curMode === 'type') { buildType(host, p); return; }
 
+    if (curMode === 'blank') {
+      const tip = document.createElement('div');
+      tip.className = 'blank-tip';
+      tip.innerHTML = '在横线上打出缺的单词，按 <kbd>Enter</kbd> 检查：对了变绿并锁住，错了标红可重填。';
+      host.appendChild(tip);
+    }
+
     sents.forEach((s, i) => {
       const row = document.createElement('div');
       row.className = 'sent ' + curMode;
       if (s.paraStart) row.classList.add('para-start');
-      if (curMode === 'block' && p.sentences[i]) row.classList.add('revealed');
       row.dataset.i = i;
 
       if (showCn && cns[i]) {
@@ -610,6 +615,34 @@
     });
   }
 
+  /* 填空：挑值得默写的实词（跳过 the/a/of 这种） */
+  const STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'they', 'their', 'there',
+    'which', 'what', 'when', 'where', 'have', 'has', 'had', 'been', 'were', 'will', 'would',
+    'could', 'should', 'about', 'into', 'than', 'then', 'them', 'these', 'those', 'such',
+    'more', 'most', 'also', 'only', 'very', 'just', 'because', 'while', 'after', 'before',
+    'between', 'through', 'people', 'many', 'much', 'some', 'other', 'make', 'made']);
+
+  function blankPicks(text) {
+    const words = groupWords(text);
+    const cands = [];
+    words.forEach((w, i) => {
+      if (w.space || w.punct) return;
+      const bare = stripPunct(w.t).toLowerCase();
+      if (bare.length < 4 || STOP.has(bare)) return;
+      cands.push({ i, bare, len: bare.length });
+    });
+    // 长词优先后取 2~3 个，尽量分散在句子不同位置
+    const sorted = cands.slice().sort((a, b) => b.len - a.len);
+    const pick = [];
+    const gap = Math.max(4, Math.floor(words.length / 3));
+    sorted.forEach(c => {
+      if (pick.length >= 3) return;
+      if (pick.every(p => Math.abs(p.i - c.i) >= gap)) pick.push(c);
+    });
+    if (!pick.length && sorted.length) pick.push(sorted[0]);
+    return new Set(pick.map(p => p.i));
+  }
+
   function sentInner(text, mode) {
     if (mode === 'first') {
       return groupWords(text).map(w => {
@@ -619,18 +652,16 @@
       }).join('');
     }
     if (mode === 'blank') {
-      let idx = 0, picked = 0;
-      return groupWords(text).map(w => {
+      const targets = blankPicks(text);
+      return groupWords(text).map((w, i) => {
         if (w.space) return esc(w.t);
-        if (w.punct) { idx++; return esc(w.t); }
+        if (w.punct) return esc(w.t);
+        if (!targets.has(i)) return esc(w.t);
         const bare = stripPunct(w.t).toLowerCase();
-        const worth = /^[a-z]{5,}$/.test(bare) && picked < 2 && idx % 3 !== 0;
-        idx++;
-        if (worth) {
-          picked++;
-          return `<span class="blank-block"><span class="word" data-ans="${esc(bare)}">${esc(w.t)}</span></span>`;
-        }
-        return esc(w.t);
+        const width = Math.max(3, Math.min(14, bare.length));
+        return `<input class="blank-input" data-ans="${esc(bare)}" size="${width}"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 aria-label="填空">`;
       }).join('');
     }
     return esc(text);
@@ -659,26 +690,14 @@
       return;
     }
     if (curMode === 'blank') {
-      const blk = ev.target.closest('.blank-block');
-      if (blk && !blk.classList.contains('solved')) {
-        blk.classList.add('solved');
-        speak(stripPunct(blk.textContent));
-      }
+      // 输入框自己处理，点空白处只朗读这句
+      if (ev.target.closest('.blank-input')) return;
+      speak(sentence.text);
       return;
     }
     if (curMode === 'blur') {
       row.classList.toggle('focus');
       if (row.classList.contains('focus')) markSentence(i, true);
-      return;
-    }
-    if (curMode === 'block') {
-      if (!row.classList.contains('revealed')) {
-        row.classList.add('revealed');
-        markSentence(i, true);
-        speak(sentence.text);
-      } else {
-        speak(sentence.text);
-      }
       return;
     }
     if (curMode === 'hide') {
@@ -694,6 +713,58 @@
   function setMode(m) {
     curMode = m;
     renderRecite();
+  }
+
+  /* 填空拼写：回车检查，对了变绿并锁住 */
+  const normWord = s => String(s).toLowerCase().replace(/[^a-z']/g, '');
+
+  function checkBlank(inp, quiet) {
+    const want = normWord(inp.dataset.ans);
+    const got = normWord(inp.value);
+    if (!got) { inp.classList.remove('ok', 'bad'); return false; }
+    if (got === want) {
+      inp.classList.remove('bad');
+      inp.classList.add('ok');
+      inp.readOnly = true;
+      if (!quiet) { beep(880, .07); beep(1180, .09); }
+      const row = inp.closest('.sent');
+      if (row) {
+        const all = Array.from(row.querySelectorAll('.blank-input'));
+        if (all.length && all.every(x => x.classList.contains('ok'))) markSentence(+row.dataset.i, true);
+      }
+      return true;
+    }
+    inp.classList.remove('ok');
+    inp.classList.add('bad');
+    if (!quiet) beep(240, .14, 'square', .035);
+    return false;
+  }
+
+  function onPaperKeydown(e) {
+    const inp = e.target.closest && e.target.closest('.blank-input');
+    if (!inp) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const ok = checkBlank(inp);
+      if (ok) {
+        // 自动跳到下一个还没填对的空格
+        const row = inp.closest('.sent');
+        const next = row && Array.from(row.querySelectorAll('.blank-input')).find(x => !x.classList.contains('ok') && x !== inp)
+          || Array.from(document.querySelectorAll('#paper .blank-input')).find(x => !x.classList.contains('ok'));
+        if (next) next.focus();
+      }
+      speak(inp.dataset.ans);
+    }
+  }
+
+  function onPaperInput(e) {
+    const inp = e.target.closest && e.target.closest('.blank-input');
+    if (inp && inp.classList.contains('bad')) inp.classList.remove('bad');
+  }
+
+  function onPaperFocusOut(e) {
+    const inp = e.target.closest && e.target.closest('.blank-input');
+    if (inp && !inp.readOnly && inp.value.trim()) checkBlank(inp, true);
   }
 
   /* ---- 整篇默写 ---- */
@@ -1413,6 +1484,9 @@
 
     /* 背诵 */
     $('#paper').addEventListener('click', onPaperClick);
+    $('#paper').addEventListener('keydown', onPaperKeydown);
+    $('#paper').addEventListener('input', onPaperInput);
+    $('#paper').addEventListener('focusout', onPaperFocusOut);
     $('#modes').addEventListener('click', e => {
       const b = e.target.closest('[data-mode]');
       if (b) setMode(b.dataset.mode);
@@ -1541,12 +1615,15 @@
       e.target.value = '';
     });
 
-    /* 快捷键：1-7 切模式 */
+    /* 快捷键：1-6 切模式（填空输入框里也能切） */
     document.addEventListener('keydown', e => {
       if (view !== 'recite' || !cur) return;
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-      const map = { 1: 'double', 2: 'hide', 3: 'first', 4: 'blur', 5: 'block', 6: 'blank', 7: 'type' };
-      if (map[e.key]) { e.preventDefault(); setMode(map[e.key]); }
+      const ae = document.activeElement;
+      const tag = ae ? ae.tagName : '';
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' && !ae.classList.contains('blank-input')) return;
+      const map = { 1: 'double', 2: 'hide', 3: 'first', 4: 'blur', 5: 'blank', 6: 'type' };
+      if (map[e.key]) { e.preventDefault(); setMode(map[e.key]); return; }
       if (e.key === ' ') { e.preventDefault(); stopSpeak(); }
     });
   }

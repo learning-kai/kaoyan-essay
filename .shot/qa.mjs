@@ -116,11 +116,11 @@ try {
   check('默认蓝图模式', (await cls('#paper')).includes('mode-double'));
   check('逐句中文在', (await txt('#paper .sent .cn')).length > 4);
   check('5 个朗读按钮', (await count('#paper .speak-btn')) === 5, await count('#paper .speak-btn'));
-  check('7 个模式按钮', (await count('#modes .mode')) === 7);
+  check('6 个模式按钮', (await count('#modes .mode')) === 6, await count('#modes .mode'));
   await shot('02-recite-double');
 
   console.log('\n== 六种进阶模式 ==');
-  for (const m of ['hide', 'first', 'blur', 'block', 'blank', 'type']) {
+  for (const m of ['hide', 'first', 'blur', 'blank', 'type']) {
     await click(`[data-mode=${m}]`); await sleep(320);
     check('模式 ' + m, (await cls('#paper')).includes('mode-' + m), await cls('#paper'));
     if (m === 'hide') { await click('#paper .sent'); await sleep(220); check('点句显英文', (await cls('#paper .sent')).includes('show-en')); }
@@ -128,9 +128,11 @@ try {
     if (m === 'blur') { await click('#paper .sent .en'); await sleep(260); check('模糊显影', (await cls('#paper .sent')).includes('focus')); }
     if (m === 'block') { await click('#paper .sent .en'); await sleep(260); check('逐块显影', (await cls('#paper .sent')).includes('revealed')); await shot('04-block'); }
     if (m === 'blank') {
-      check('填空块 > 3', (await count('.blank-block')) > 3, await count('.blank-block'));
-      await click('.blank-block .word'); await sleep(220);
-      check('填空显影', (await cls('.blank-block')).includes('solved'));
+      check('填空输入框 > 3', (await count('.blank-input')) > 3, await count('.blank-input'));
+      const ans = await evaluate("document.querySelector('.blank-input').dataset.ans");
+      await evaluate("(()=>{const i=document.querySelector('.blank-input');i.value=" + JSON.stringify(ans) + ";i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return 1;})()");
+      await sleep(300);
+      check('打字答对标绿', (await cls('.blank-input')).includes('ok'), await cls('.blank-input'));
       await shot('05-blank');
     }
     if (m === 'type') {
@@ -244,7 +246,7 @@ try {
   await click('[data-close=modalStats]'); await sleep(200);
   await click('#btnSettings'); await sleep(320);
   check('设置弹窗', await evaluate("!document.querySelector('#modalSettings').hidden"));
-  check('默认模式 7 项', (await count('#setMode option')) === 7, await count('#setMode option'));
+  check('默认模式 6 项', (await count('#setMode option')) === 6, await count('#setMode option'));
   await click('#setSize [data-size=l]'); await sleep(220);
   check('字号写入', (await evaluate("JSON.parse(localStorage.getItem('sunset-desk-v1')).settings.size")) === 'l');
   await shot('10-settings');
@@ -293,6 +295,8 @@ try {
 console.log(`\n通过 ${pass} · 失败 ${fail}`);
 if (fail) console.log('失败项:\n' + failures.join('\n'));
 process.exit(fail ? 1 : 0);
+
+
 
 
 
