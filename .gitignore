@@ -1,0 +1,18 @@
+# 系统 / 编辑器
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.log
+
+# 自检脚本跑出来的截图（只提交 preview/ 里手工挑过的那几张）
+.shot/*.png
+.shot/*.html
+.shot/*.txt
+.shot/*.js
+.shot/*.ps1
+.shot/*.py
+
+# 本地临时
+node_modules/
+.idea/
+.vscode/

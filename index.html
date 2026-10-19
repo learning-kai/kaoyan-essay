@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>落日书桌 · 考研英语一作文背诵</title>
+<meta name="description" content="考研英语一作文背诵工坊：自己的大作文三段模板 + 小作文信件句库，七种背诵模式与艾宾浩斯复习。">
+<meta name="theme-color" content="#f3e8d3">
+<meta property="og:title" content="落日书桌 · 考研英语一作文背诵">
+<meta property="og:description" content="大作文三段模板 + 小作文信件句库，七种背诵模式，进度自动排复习。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23f3e8d3'/%3E%3Ccircle cx='32' cy='38' r='13' fill='%23e2582b'/%3E%3Crect x='8' y='38' width='48' height='2.4' fill='%23221b14'/%3E%3Cpath d='M32 12v8M20 16l4 6M44 16l-4 6' stroke='%23e2582b' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 字体不阻塞首屏：拿不到就用系统衬线体兜底 -->
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400&family=IBM+Plex+Mono:wght@400;500&family=JetBrains+Mono:wght@400&display=swap">
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,900;1,9..144,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+</noscript>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="paper-grain" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="brand">
+    <div class="brand-mark" id="brandMark" aria-hidden="true"></div>
+    <div class="brand-text">
+      <h1>落日书桌</h1>
+      <p>考研英语作文 · 背诵工坊</p>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="主导航">
+    <button class="tab" data-view="template"><span class="tab-no">01</span>模板</button>
+    <button class="tab" data-view="library"><span class="tab-no">02</span>选文</button>
+    <button class="tab" data-view="recite"><span class="tab-no">03</span>背诵</button>
+    <button class="tab" data-view="review"><span class="tab-no">04</span>复习</button>
+    <button class="tab" data-view="dict"><span class="tab-no">05</span>听写</button>
+  </nav>
+  <div class="mast-actions">
+    <button class="ghost-btn" id="btnStats" title="学习统计">统计</button>
+    <button class="ghost-btn" id="btnSettings" title="设置">设置</button>
+  </div>
+</header>
+
+<main class="stage">
+
+  <!-- ================= 选文 ================= -->
+  <section class="view" id="view-library">
+    <div class="lib-head">
+      <div class="countdown">
+        <div class="cd-days" id="cdDays">—</div>
+        <div class="cd-label">距考试</div>
+        <input type="date" id="examDate" class="cd-input" aria-label="考试日期">
+      </div>
+      <div class="lib-intro">
+        <h2>今天背哪一篇？</h2>
+        <p id="libSummary">—</p>
+      </div>
+      <button class="primary-btn" id="btnContinue">继续上次</button>
+    </div>
+
+    <div class="filters" id="filters"></div>
+
+    <div class="essay-grid" id="essayGrid"></div>
+
+    <div class="custom-block">
+      <h3>我的范文</h3>
+      <p class="hint">把老师给的、网上找的范文贴进来，保存到本机（浏览器存储），格式：标题 + 一空行 + 英文正文；没有标题就只贴正文。</p>
+      <textarea id="customInput" rows="6" placeholder="示例：&#10;The Value of Reading&#10;&#10;As is vividly shown in the picture, ..."></textarea>
+      <div class="custom-actions">
+        <select id="customCat" aria-label="分类">
+          <option value="big1">英语一大作文</option>
+          <option value="small1">英语一小作文</option>
+          <option value="big2">英语二大作文</option>
+          <option value="small2">英语二小作文</option>
+          <option value="sent">句型素材</option>
+        </select>
+        <button class="primary-btn" id="btnAddCustom">添加</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 模板 ================= -->
+  <section class="view" id="view-template">
+    <div class="page-head">
+      <h2>我的模板 <span class="tpl-cd" id="tplCd"></span></h2>
+      <p>三段十句的大作文，加上按类型拼装的小作文句库。方括号<span class="slot-demo">[这样]</span>的地方是考场要现场填的槽位——句子背熟，剩下的只有「往里填词」。</p>
+    </div>
+    <div class="tpl-toolbar">
+      <button class="tool on" id="btnTplCn" title="显示中文">中</button>
+      <button class="tool on" id="btnTplHint" title="显示槽位提示">槽</button>
+      <button class="primary-btn" id="btnTplRecite">用七种模式背这套模板 →</button>
+    </div>
+    <div id="tplBody"></div>
+  </section>
+
+  <!-- ================= 背诵 ================= -->
+  <section class="view" id="view-recite">
+    <div class="recite-empty" id="reciteEmpty">
+      <p>还没有选择文章。</p>
+      <button class="primary-btn" data-goto="library">去选一篇</button>
+    </div>
+
+    <div id="reciteBody" hidden>
+      <div class="recite-top">
+        <button class="ghost-btn back" data-goto="library">← 选文</button>
+        <div class="recite-title">
+          <span class="cat-chip" id="rCat"></span>
+          <h2 id="rTitle"></h2>
+          <p id="rPrompt"></p>
+        </div>
+        <div class="recite-progress"><span id="rProgress">—</span></div>
+      </div>
+
+      <div class="recite-bar">
+        <div class="modes" id="modes" role="group" aria-label="背诵模式"></div>
+        <div class="bar-tools">
+          <button class="tool" id="btnCn" title="显示逐句中文">中</button>
+          <button class="tool" id="btnFont" title="字号">A+</button>
+          <button class="tool" id="btnHint" title="这一篇背到哪了">?</button>
+        </div>
+      </div>
+
+      <div class="progress-line"><div class="progress-fill" id="progressFill"></div></div>
+
+      <div class="paper" id="paper"></div>
+
+      <div class="recite-footer">
+        <button class="ghost-btn" id="btnRestart">重来</button>
+        <button class="primary-btn big" id="btnNext">背下一篇 →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 复习 ================= -->
+  <section class="view" id="view-review">
+    <div class="page-head">
+      <h2>间隔复习</h2>
+      <p>按艾宾浩斯记忆曲线复习：刚背完 → 1天 → 2天 → 4天 → 7天 → 15天 → 30天。到期的文章会出现在这里。</p>
+    </div>
+    <div class="review-stats" id="reviewStats"></div>
+    <div class="review-list" id="reviewList"></div>
+    <div class="review-later">
+      <h3>还没到期的</h3>
+      <div id="reviewUpcoming" class="upcoming"></div>
+    </div>
+  </section>
+
+  <!-- ================= 听写 ================= -->
+  <section class="view" id="view-dict">
+    <div class="page-head">
+      <h2>听写 / 输入测试</h2>
+      <p>点开始后逐词朗读，你看着空白的句子把听到的内容打出来。空格会被忽略，标点不区分大小写。卡住了可以按 <kbd>Tab</kbd> 听下一个词。</p>
+    </div>
+    <div id="dictBody"></div>
+  </section>
+
+</main>
+
+<!-- 统计弹窗 -->
+<div class="modal" id="modalStats" hidden>
+  <div class="modal-card">
+    <button class="modal-close" data-close="modalStats" aria-label="关闭">×</button>
+    <h2>学习统计</h2>
+    <div id="statsBody" class="stats-body"></div>
+  </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal" id="modalSettings" hidden>
+  <div class="modal-card">
+    <button class="modal-close" data-close="modalSettings" aria-label="关闭">×</button>
+    <h2>设置</h2>
+    <div class="setting">
+      <label>考试日期</label>
+      <input type="date" id="setExamDate">
+    </div>
+    <div class="setting">
+      <label for="setSpeed">朗读语速 <span id="speedVal">0.9×</span></label>
+      <input type="range" id="setSpeed" min="0.5" max="1.2" step="0.05" value="0.9">
+    </div>
+    <div class="setting">
+      <label>朗读口音</label>
+      <div class="seg" id="setAccent">
+        <button data-accent="en-US">美音</button>
+        <button data-accent="en-GB">英音</button>
+      </div>
+    </div>
+    <div class="setting">
+      <label>字号</label>
+      <div class="seg" id="setSize">
+        <button data-size="s">小</button>
+        <button data-size="m">中</button>
+        <button data-size="l">大</button>
+      </div>
+    </div>
+    <div class="setting">
+      <label>默认背诵模式</label>
+      <select id="setMode">
+        <option value="double">双层连续 · 蓝图</option>
+        <option value="hide">只显示中文</option>
+        <option value="first">首字母提示</option>
+        <option value="blur">模糊显影</option>
+        <option value="block">逐块背诵</option>
+        <option value="blank">填空默写</option>
+        <option value="type">整篇默写</option>
+      </select>
+    </div>
+    <div class="setting">
+      <label>数据备份</label>
+      <div class="backup-actions">
+        <button class="ghost-btn" id="btnExport">导出进度</button>
+        <button class="ghost-btn" id="btnImport">导入进度</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </div>
+    <p class="hint small">进度保存在当前浏览器里。换电脑或换浏览器请先导出。</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="confetti" id="confetti" aria-hidden="true"></div>
+
+<script src="data/essays.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
