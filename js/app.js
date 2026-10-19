@@ -20,13 +20,21 @@
   };
   const CAT_SHORT = { big1: '英语一大', small1: '英语一小', big2: '英语二大', small2: '英语二小', sent: '句型' };
   const MODES = [
-    ['double', '蓝图', 'I'],
-    ['hide', '只显中文', 'II'],
-    ['first', '首字母', 'III'],
-    ['blur', '模糊显影', 'IV'],
-    ['blank', '填空拼写', 'V'],
-    ['type', '整篇默写', 'VI']
+    ['blank', '填空拼写', 'I'],
+    ['blur', '模糊显影', 'II']
   ];
+  const MODE_KEYS = MODES.map(m => m[0]);
+  /* 已下线的旧模式名，读旧设置时兜底到现存模式 */
+  const OLD_MODES = {
+    double: 'blur',   // 双层蓝图 → 模糊显影
+    hide: 'blur',     // 只显中文 → 模糊显影
+    first: 'blank',   // 首字母 → 填空（每个词都要打出来）
+    type: 'blank'     // 整篇默写 → 逐句填空
+  };
+  function normMode(m) {
+    if (MODE_KEYS.includes(m)) return m;
+    return OLD_MODES[m] || 'blank';
+  }
   const SIZES = { s: 'calc(var(--fs) * .86)', m: 'var(--fs)', l: 'calc(var(--fs) * 1.22)' };
 
   const pad = n => String(n).padStart(2, '0');
@@ -64,7 +72,7 @@
     rate: 0.9,
     accent: 'en-US',
     size: 'm',
-    mode: 'double'
+    mode: 'blank'
   });
 
   let S;
@@ -195,31 +203,21 @@
   const wordsOf = s => normEn(s).split(' ').filter(Boolean);
   const wordCount = s => wordsOf(s).length;
 
-  const stripPunct = s => String(s)
-    .replace(/^[\s"'“”‘’(\[]+/, '')
-    .replace(/[\s,.!?;:"'“”‘’)\]]+$/, '');
-
-  const HEAD = new Set(['A', 'I', 'a', 'i']);
-  function groupWords(text) {
-    return text.split(/(\s+)/).map(p => {
+  /* 把一句拆成「空白 / 标点 / 单词」三类，单词带上首尾标点，
+   * 这样全挖空时标点留在原处，只有词本身变成横线。 */
+  function tokenize(text) {
+    return String(text).split(/(\s+)/).map(p => {
       if (!p || /^\s+$/.test(p)) return { t: p, space: true };
-      const m = p.match(/^([^A-Za-z]*)([A-Za-z])/);
-      if (!m) return { t: p, punct: true, head: p };
-      return { t: p, head: HEAD.has(m[2]) ? p : m[2] };
+      // [槽位] 是考场才填的，原样显示，不挖空
+      if (/[[\]]/.test(p)) return { t: p, literal: true };
+      const m = p.match(/^([^A-Za-z]*)([A-Za-z][A-Za-z'’-]*)(.*)$/);
+      if (!m) return { t: p, literal: true };
+      return { t: p, lead: m[1], core: m[2], tail: m[3], word: true };
     });
   }
 
-  // 答案 vs 原文：按顺序找漏掉的词
-  function findMissing(answer, target) {
-    const a = wordsOf(answer), t = wordsOf(target);
-    let i = 0, j = 0;
-    const miss = [];
-    while (j < t.length) {
-      if (a[i] === t[j]) { i++; j++; }
-      else { miss.push(t[j]); j++; }
-    }
-    return miss;
-  }
+  /* 判词只看字母：大小写、标点、连字符、撇号都不计较 */
+  const normWord = s => String(s).toLowerCase().replace(/[^a-z]/g, '');
 
   /* ==================== 语音 ==================== */
   const synth = window.speechSynthesis;
@@ -246,49 +244,6 @@
     synth.speak(u);
   }
   const stopSpeak = () => { if (synth) synth.cancel(); };
-
-  function speakSequence(texts, onDone) {
-    if (!synth) { toast('当前浏览器不支持朗读'); return; }
-    synth.cancel();
-    const v = pickVoice();
-    texts.forEach((t, i) => {
-      const u = new SpeechSynthesisUtterance(String(t).replace(/\s+/g, ' ').trim());
-      u.lang = S.settings.accent;
-      u.rate = S.settings.rate;
-      if (v) u.voice = v;
-      if (i === texts.length - 1 && onDone) u.onend = onDone;
-      synth.speak(u);
-    });
-  }
-
-  /* 语音识别（Chrome / Edge） */
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  function scoreSpeech(target, transcript) {
-    const t = new Set(wordsOf(target));
-    const heard = new Set(wordsOf(transcript));
-    if (!t.size) return 0;
-    let hit = 0;
-    t.forEach(w => { if (heard.has(w)) hit++; });
-    return Math.round(hit / t.size * 100);
-  }
-  function listen(onResult, onEnd) {
-    if (!SR) { toast('这个浏览器不支持语音识别，请用电脑上的 Chrome 或 Edge'); return; }
-    stopSpeak();
-    const rec = new SR();
-    rec.lang = 'en-US';
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    let got = false;
-    rec.onresult = e => { got = true; onResult(e.results[0][0].transcript); };
-    rec.onerror = e => {
-      got = true;
-      if (/not-allowed|service-not-allowed/.test(e.error)) toast('没有麦克风权限');
-      else if (e.error === 'no-speech') toast('没听到声音，再试一次');
-      else toast('识别失败：' + e.error);
-    };
-    rec.onend = () => { if (!got) onResult(null); if (onEnd) onEnd(); };
-    rec.start();
-  }
 
   /* ==================== 进度 ==================== */
   function getProg(id) {
@@ -337,7 +292,6 @@
     if (next === 'template') renderTemplate();
     if (next === 'recite') renderRecite();
     if (next === 'review') renderReview();
-    if (next === 'dict') renderDict();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -517,7 +471,7 @@
 
   /* ==================== 背诵 ==================== */
   let cur = null;
-  let curMode = 'double';
+  let curMode = 'blank';
   let showCn = true;
   let curReview = false;
 
@@ -525,7 +479,7 @@
     const e = getEssay(id);
     if (!e) { toast('找不到这篇文章'); return; }
     cur = e;
-    curMode = S.settings.mode || 'double';
+    curMode = normMode(S.settings.mode);
     curReview = !!fromReview;
     S.last = id;
     saveSoft();
@@ -576,12 +530,10 @@
     const p = getProg(cur.id);
     const cns = cur.cn || [];
 
-    if (curMode === 'type') { buildType(host, p); return; }
-
     if (curMode === 'blank') {
       const tip = document.createElement('div');
       tip.className = 'blank-tip';
-      tip.innerHTML = '在横线上打出缺的单词，按 <kbd>Enter</kbd> 检查：对了变绿并锁住，错了标红可重填。';
+      tip.innerHTML = '整句每个词都挖空了，在横线上打出来：打对就变绿并自动跳到下一个空，打错会标红，<kbd>Enter</kbd> 重判、<kbd>Tab</kbd> 换空。';
       host.appendChild(tip);
     }
 
@@ -615,53 +567,15 @@
     });
   }
 
-  /* 填空：挑值得默写的实词（跳过 the/a/of 这种） */
-  const STOP = new Set(['the', 'and', 'that', 'this', 'with', 'from', 'they', 'their', 'there',
-    'which', 'what', 'when', 'where', 'have', 'has', 'had', 'been', 'were', 'will', 'would',
-    'could', 'should', 'about', 'into', 'than', 'then', 'them', 'these', 'those', 'such',
-    'more', 'most', 'also', 'only', 'very', 'just', 'because', 'while', 'after', 'before',
-    'between', 'through', 'people', 'many', 'much', 'some', 'other', 'make', 'made']);
-
-  function blankPicks(text) {
-    const words = groupWords(text);
-    const cands = [];
-    words.forEach((w, i) => {
-      if (w.space || w.punct) return;
-      const bare = stripPunct(w.t).toLowerCase();
-      if (bare.length < 4 || STOP.has(bare)) return;
-      cands.push({ i, bare, len: bare.length });
-    });
-    // 长词优先后取 2~3 个，尽量分散在句子不同位置
-    const sorted = cands.slice().sort((a, b) => b.len - a.len);
-    const pick = [];
-    const gap = Math.max(4, Math.floor(words.length / 3));
-    sorted.forEach(c => {
-      if (pick.length >= 3) return;
-      if (pick.every(p => Math.abs(p.i - c.i) >= gap)) pick.push(c);
-    });
-    if (!pick.length && sorted.length) pick.push(sorted[0]);
-    return new Set(pick.map(p => p.i));
-  }
-
+  /* 填空：整句每个词都挖空，只留标点和 [槽位] */
   function sentInner(text, mode) {
-    if (mode === 'first') {
-      return groupWords(text).map(w => {
-        if (w.space) return esc(w.t);
-        if (w.punct) return `<span class="word punct">${esc(w.t)}</span>`;
-        return `<span class="word" data-head="${esc(w.head)}">${esc(w.t)}</span>`;
-      }).join('');
-    }
     if (mode === 'blank') {
-      const targets = blankPicks(text);
-      return groupWords(text).map((w, i) => {
-        if (w.space) return esc(w.t);
-        if (w.punct) return esc(w.t);
-        if (!targets.has(i)) return esc(w.t);
-        const bare = stripPunct(w.t).toLowerCase();
-        const width = Math.max(3, Math.min(14, bare.length));
-        return `<input class="blank-input" data-ans="${esc(bare)}" size="${width}"
+      return tokenize(text).map(w => {
+        if (!w.word) return esc(w.t);
+        const n = Math.max(2, Math.min(18, w.core.length));
+        return `${esc(w.lead)}<input class="blank-input" data-ans="${esc(w.core)}" size="${n}"
                  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-                 aria-label="填空">`;
+                 aria-label="填空">${esc(w.tail)}`;
       }).join('');
     }
     return esc(text);
@@ -684,11 +598,6 @@
     const sentence = splitSentences(cur.en)[i];
     if (!sentence) return;
 
-    if (curMode === 'first') {
-      const w = ev.target.closest('.word');
-      if (w) { w.classList.add('peek'); speak(stripPunct(w.textContent)); }
-      return;
-    }
     if (curMode === 'blank') {
       // 输入框自己处理，点空白处只朗读这句
       if (ev.target.closest('.blank-input')) return;
@@ -698,26 +607,15 @@
     if (curMode === 'blur') {
       row.classList.toggle('focus');
       if (row.classList.contains('focus')) markSentence(i, true);
-      return;
-    }
-    if (curMode === 'hide') {
-      row.classList.toggle('show-en');
-      if (row.classList.contains('show-en')) { markSentence(i, true); speak(sentence.text); }
-      return;
-    }
-    if (curMode === 'double') {
-      speak(sentence.text);
     }
   }
 
   function setMode(m) {
-    curMode = m;
+    curMode = normMode(m);
     renderRecite();
   }
 
-  /* 填空拼写：回车检查，对了变绿并锁住 */
-  const normWord = s => String(s).toLowerCase().replace(/[^a-z']/g, '');
-
+  /* 填空拼写：打对就变绿锁住并自动跳到下一个空 */
   function checkBlank(inp, quiet) {
     const want = normWord(inp.dataset.ans);
     const got = normWord(inp.value);
@@ -726,6 +624,7 @@
       inp.classList.remove('bad');
       inp.classList.add('ok');
       inp.readOnly = true;
+      inp.tabIndex = -1;
       if (!quiet) { beep(880, .07); beep(1180, .09); }
       const row = inp.closest('.sent');
       if (row) {
@@ -740,84 +639,44 @@
     return false;
   }
 
+  /* 下一个还没填对的空，跨句继续 */
+  function nextBlank(from) {
+    const all = Array.from(document.querySelectorAll('#paper .blank-input'));
+    const idx = all.indexOf(from);
+    return all.slice(idx + 1).find(x => !x.classList.contains('ok'))
+      || all.find(x => !x.classList.contains('ok'))
+      || null;
+  }
+
   function onPaperKeydown(e) {
     const inp = e.target.closest && e.target.closest('.blank-input');
     if (!inp) return;
     if (e.key === 'Enter') {
       e.preventDefault();
-      const ok = checkBlank(inp);
-      if (ok) {
-        // 自动跳到下一个还没填对的空格
-        const row = inp.closest('.sent');
-        const next = row && Array.from(row.querySelectorAll('.blank-input')).find(x => !x.classList.contains('ok') && x !== inp)
-          || Array.from(document.querySelectorAll('#paper .blank-input')).find(x => !x.classList.contains('ok'));
-        if (next) next.focus();
+      if (checkBlank(inp)) {
+        const nx = nextBlank(inp);
+        if (nx) nx.focus();
+      } else {
+        speak(inp.dataset.ans);
       }
-      speak(inp.dataset.ans);
     }
   }
 
   function onPaperInput(e) {
     const inp = e.target.closest && e.target.closest('.blank-input');
-    if (inp && inp.classList.contains('bad')) inp.classList.remove('bad');
+    if (!inp || inp.readOnly) return;
+    if (inp.classList.contains('bad')) inp.classList.remove('bad');
+    // 打对了立刻变绿并跳走，不用按回车
+    if (normWord(inp.value) && normWord(inp.value) === normWord(inp.dataset.ans)) {
+      checkBlank(inp);
+      const nx = nextBlank(inp);
+      if (nx) nx.focus();
+    }
   }
 
   function onPaperFocusOut(e) {
     const inp = e.target.closest && e.target.closest('.blank-input');
     if (inp && !inp.readOnly && inp.value.trim()) checkBlank(inp, true);
-  }
-
-  /* ---- 整篇默写 ---- */
-  function buildType(host, p) {
-    const wrap = document.createElement('div');
-    wrap.className = 'type-wrap';
-    wrap.innerHTML = `
-      <div class="type-bar">
-        <button class="primary-btn" id="typeStart">开始默写</button>
-        <button class="ghost-btn" id="typeCheck">检查</button>
-        <button class="ghost-btn" id="typeClear">清空</button>
-        <span class="type-hint">默写完点「检查」：空格和标点不比较，错误会逐词标出。</span>
-      </div>
-      <textarea id="typeArea" spellcheck="false" autocapitalize="off" autocorrect="off" placeholder="在这里默写整篇作文……"></textarea>
-      <div class="type-result" id="typeResult"></div>`;
-    host.appendChild(wrap);
-
-    const area = $('#typeArea', wrap);
-    const result = $('#typeResult', wrap);
-
-    $('#typeStart', wrap).onclick = () => { area.focus(); speakSequence(splitSentences(cur.en).map(s => s.text)); };
-    $('#typeClear', wrap).onclick = () => { area.value = ''; result.innerHTML = ''; area.focus(); };
-    $('#typeCheck', wrap).onclick = () => {
-      const ans = wordsOf(area.value);
-      const tgt = wordsOf(cur.en);
-      if (!ans.length) { toast('还没写内容呢'); return; }
-      let hit = 0;
-      for (let i = 0; i < Math.min(ans.length, tgt.length); i++) if (ans[i] === tgt[i]) hit++;
-      const pct = Math.round(hit / Math.max(ans.length, tgt.length) * 100);
-      p.essayBest = Math.max(p.essayBest || 0, pct);
-      save();
-
-      const diff = [];
-      const n = Math.max(ans.length, tgt.length);
-      for (let i = 0; i < n; i++) {
-        if (ans[i] === tgt[i] && ans[i]) continue;
-        if (ans[i] && tgt[i]) diff.push(`<del>${esc(ans[i])}</del> <ins>${esc(tgt[i])}</ins>`);
-        else if (tgt[i]) diff.push(`<ins>${esc(tgt[i])}</ins>`);
-        else if (ans[i]) diff.push(`<del>${esc(ans[i])}</del>`);
-      }
-      result.innerHTML = `
-        <div class="type-score">正确率 <b>${pct}%</b> · 写了 ${ans.length} 词 / 原文 ${tgt.length} 词</div>
-        ${diff.length ? `<p class="type-diff">${diff.slice(0, 120).join(' ')}</p>` : '<p class="type-diff ok">一个词都没错，厉害。</p>'}`;
-
-      if (pct >= 90) { celebrate(); toast(`默写 ${pct}%，非常接近原文`); markSentenceAll(); }
-      else toast(`默写 ${pct}%，红色是错的，绿色是漏掉的`);
-    };
-  }
-  function markSentenceAll() {
-    const p = getProg(cur.id);
-    p.sentences = splitSentences(cur.en).map(() => true);
-    save();
-    updateProgress();
   }
 
   /* ==================== 复习 ==================== */
@@ -857,122 +716,6 @@
       : '<span class="u-chip">还没有安排</span>';
   }
 
-  /* ==================== 听写 ==================== */
-  let dict = null;
-
-  function renderDict() {
-    const host = $('#dictBody');
-    if (!dict) {
-      host.innerHTML = `
-        <p class="hint" style="margin-bottom:12px">选一篇，逐句听写。Enter 检查，Tab 再听一遍。</p>
-        <div class="dict-choose" id="dictChoose">
-          ${allEssays().map(e => `<button class="chip" data-id="${e.id}">${esc(e.title)}</button>`).join('')}
-        </div>`;
-      return;
-    }
-    if (dict.finished) { renderDictResult(host); return; }
-
-    const s = dict.items[dict.i];
-    const dots = dict.items.map(it => `<span class="${it.result ? 'on' : ''}"></span>`).join('');
-    host.innerHTML = `
-      <div class="dict-panel">
-        <div class="dict-score">
-          <span>${esc(dict.title)}</span>
-          <span>${dict.i + 1} / ${dict.items.length}</span>
-        </div>
-        <div class="word-dots">${dots}</div>
-        ${s.cn ? `<p class="dict-cn">${esc(s.cn)}</p>` : ''}
-        <textarea class="dict-input" id="dictInput" rows="2" spellcheck="false" placeholder="听到什么就打什么，Enter 检查"></textarea>
-        <div class="dict-actions">
-          <button class="primary-btn" id="dictPlay">再听一遍</button>
-          <button class="ghost-btn" id="dictHint">提示首词</button>
-          ${SR ? '<button class="ghost-btn" id="dictMic">跟读打分</button>' : ''}
-          <button class="ghost-btn" id="dictSkip">跳过</button>
-        </div>
-        <div class="dict-feedback" id="dictFeedback"></div>
-      </div>`;
-
-    const input = $('#dictInput');
-    input.focus();
-    const play = () => speak(s.text);
-    $('#dictPlay').onclick = play;
-    $('#dictHint').onclick = () => {
-      const first = s.text.split(/\s+/)[0];
-      speak(first);
-      toast('首词：' + stripPunct(first));
-    };
-    $('#dictSkip').onclick = () => finishDictItem(true);
-    if (SR) {
-      $('#dictMic').onclick = () => {
-        toast('开始跟读，说完自动打分');
-        listen(text => {
-          if (!text) return;
-          const score = scoreSpeech(s.text, text);
-          $('#dictFeedback').innerHTML = `<p class="fb-line">跟读得分 <b>${score}</b> / 100</p><p class="fb-line muted">识别到：${esc(text)}</p>`;
-        });
-      };
-    }
-    input.addEventListener('keydown', ev => {
-      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); finishDictItem(false); }
-      if (ev.key === 'Tab') { ev.preventDefault(); play(); }
-    });
-    setTimeout(play, 220);
-  }
-
-  function finishDictItem(skip) {
-    const item = dict.items[dict.i];
-    const val = $('#dictInput') ? $('#dictInput').value : '';
-    const miss = skip ? wordsOf(item.text) : findMissing(val, item.text);
-    const total = wordsOf(item.text).length || 1;
-    const pct = skip ? 0 : Math.round((total - miss.length) / total * 100);
-    const ok = !skip && miss.length === 0;
-    item.result = ok ? 100 : Math.max(pct, 1);
-
-    const fb = $('#dictFeedback');
-    fb.innerHTML = ok
-      ? '<p class="fb-line ok">✓ 完全正确</p>'
-      : `<p class="fb-line">漏掉或写错：<span class="bad">${miss.slice(0, 12).map(esc).join(' ') || '—'}</span></p>
-         <p class="fb-line muted">原文：${esc(item.text)}</p>`;
-
-    if (!ok && synth) setTimeout(() => speak(item.text), 260);
-    saveSoft();
-    setTimeout(() => {
-      dict.i++;
-      if (dict.i >= dict.items.length) dict.finished = true;
-      renderDict();
-    }, ok ? 600 : 2400);
-  }
-
-  function renderDictResult(host) {
-    const avg = Math.round(dict.items.reduce((a, x) => a + Math.max(0, x.result || 0), 0) / dict.items.length);
-    const perfect = dict.items.filter(x => x.result >= 100).length;
-    host.innerHTML = `<div class="dict-panel dict-result">
-      <h3>${avg}%</h3>
-      <p>共 ${dict.items.length} 句，完全正确 ${perfect} 句</p>
-      <div class="dict-actions" style="justify-content:center">
-        <button class="primary-btn" id="dictAgain">再来一次</button>
-        <button class="ghost-btn" id="dictBack">换一篇</button>
-      </div>
-    </div>`;
-    $('#dictAgain').onclick = () => startDict(dict.essayId);
-    $('#dictBack').onclick = () => { dict = null; renderDict(); };
-    if (avg >= 80) celebrate();
-  }
-
-  function startDict(id) {
-    const e = getEssay(id);
-    if (!e) return;
-    const sents = splitSentences(e.en);
-    dict = {
-      essayId: id,
-      title: (CAT_SHORT[e.cat] || '') + ' · ' + e.title,
-      items: sents.map((s, i) => ({ text: s.text, cn: (e.cn || [])[i] || '', result: 0 })),
-      i: 0,
-      finished: false
-    };
-    logStudy();
-    renderDict();
-  }
 
   /* ==================== 闯关练习 ==================== */
 
@@ -1376,7 +1119,7 @@
     $('#speedVal').textContent = Number(S.settings.rate).toFixed(2).replace(/0$/, '') + '×';
     $$('#setAccent button').forEach(b => b.classList.toggle('active', b.dataset.accent === S.settings.accent));
     $$('#setSize button').forEach(b => b.classList.toggle('active', b.dataset.size === S.settings.size));
-    $('#setMode').value = S.settings.mode;
+    $('#setMode').value = normMode(S.settings.mode);
   }
   function openModal(id) {
     $('#' + id).hidden = false;
@@ -1553,12 +1296,6 @@
       if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openEssay(row.dataset.id, true); }
     });
 
-    /* 听写 */
-    $('#dictBody').addEventListener('click', e => {
-      const b = e.target.closest('#dictChoose [data-id]');
-      if (b) startDict(b.dataset.id);
-    });
-
     /* 设置 */
     $('#setExamDate').addEventListener('change', e => {
       if (!e.target.value) return;
@@ -1579,7 +1316,7 @@
       if (cur) $('#paper').style.setProperty('--paper-fs', SIZES[S.settings.size]);
     });
     $('#setMode').addEventListener('change', e => {
-      S.settings.mode = e.target.value; save();
+      S.settings.mode = normMode(e.target.value); save();
       if (cur) setMode(S.settings.mode);
     });
     $('#btnExport').onclick = () => {
@@ -1615,14 +1352,14 @@
       e.target.value = '';
     });
 
-    /* 快捷键：1-6 切模式（填空输入框里也能切） */
+    /* 快捷键：1-2 切模式（填空输入框里也能切） */
     document.addEventListener('keydown', e => {
       if (view !== 'recite' || !cur) return;
       const ae = document.activeElement;
       const tag = ae ? ae.tagName : '';
       if (tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (tag === 'INPUT' && !ae.classList.contains('blank-input')) return;
-      const map = { 1: 'double', 2: 'hide', 3: 'first', 4: 'blur', 5: 'blank', 6: 'type' };
+      const map = { 1: 'blank', 2: 'blur' };
       if (map[e.key]) { e.preventDefault(); setMode(map[e.key]); return; }
       if (e.key === ' ') { e.preventDefault(); stopSpeak(); }
     });

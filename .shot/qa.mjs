@@ -113,20 +113,17 @@ try {
   await click('.card[data-id=x-2]'); await sleep(600);
   check('切到背诵视图', (await cls('#view-recite')).includes('active'));
   check('5 句', (await count('#paper .sent')) === 5, await count('#paper .sent'));
-  check('默认蓝图模式', (await cls('#paper')).includes('mode-double'));
+  check('默认填空模式', (await cls('#paper')).includes('mode-blank'));
   check('逐句中文在', (await txt('#paper .sent .cn')).length > 4);
   check('5 个朗读按钮', (await count('#paper .speak-btn')) === 5, await count('#paper .speak-btn'));
-  check('6 个模式按钮', (await count('#modes .mode')) === 6, await count('#modes .mode'));
-  await shot('02-recite-double');
+  check('2 个模式按钮', (await count('#modes .mode')) === 2, await count('#modes .mode'));
+  await shot('02-recite-blank');
 
-  console.log('\n== 六种进阶模式 ==');
-  for (const m of ['hide', 'first', 'blur', 'blank', 'type']) {
+  console.log('\n== 两种进阶模式 ==');
+  for (const m of ['blur', 'blank']) {
     await click(`[data-mode=${m}]`); await sleep(320);
     check('模式 ' + m, (await cls('#paper')).includes('mode-' + m), await cls('#paper'));
-    if (m === 'hide') { await click('#paper .sent'); await sleep(220); check('点句显英文', (await cls('#paper .sent')).includes('show-en')); }
-    if (m === 'first') { check('首字母标记', (await count('.word[data-head]')) > 20, await count('.word[data-head]')); await shot('03-first'); }
     if (m === 'blur') { await click('#paper .sent .en'); await sleep(260); check('模糊显影', (await cls('#paper .sent')).includes('focus')); }
-    if (m === 'block') { await click('#paper .sent .en'); await sleep(260); check('逐块显影', (await cls('#paper .sent')).includes('revealed')); await shot('04-block'); }
     if (m === 'blank') {
       check('填空输入框 > 3', (await count('.blank-input')) > 3, await count('.blank-input'));
       const ans = await evaluate("document.querySelector('.blank-input').dataset.ans");
@@ -135,17 +132,10 @@ try {
       check('打字答对标绿', (await cls('.blank-input')).includes('ok'), await cls('.blank-input'));
       await shot('05-blank');
     }
-    if (m === 'type') {
-      check('默写框在', await evaluate("!!document.querySelector('#typeArea')"));
-      await evaluate("(()=>{const a=document.querySelector('#typeArea');a.value='To begin with';document.querySelector('#typeCheck').click();})()");
-      await sleep(450);
-      check('有正确率', /正确率\s*\d+%/.test(await txt('#typeResult')), await txt('#typeResult'));
-      await shot('06-type');
-    }
   }
 
   console.log('\n== 工具条 ==');
-  await click('[data-mode=double]'); await sleep(250);
+  await click('[data-mode=blank]'); await sleep(250);
   await click('#btnCn'); await sleep(220);
   check('中文可隐藏', (await count('#paper .sent .cn')) === 0);
   await click('#btnCn'); await sleep(200);
@@ -206,7 +196,7 @@ try {
   await click('#btnBankRecite'); await sleep(750);
   check('小作文模板可背（感谢信 6 句 + 称呼 + 落款）', (await count('#paper .sent')) === 8, await count('#paper .sent'));
   check('标题是感谢信模板', (await txt('#rTitle')) === '小作文模板 · 感谢信', await txt('#rTitle'));
-  check('带称呼行', (await txt('#paper .sent .en')).includes('Dear'), await txt('#paper .sent .en'));
+  check('带称呼行', (await evaluate("(document.querySelector('#paper .sent .en .blank-input')||{}).dataset?.ans||''")) === 'Dear', await evaluate("(document.querySelector('#paper .sent .en .blank-input')||{}).dataset?.ans||''"));
   await click('[data-view=template]'); await sleep(400);
   await click('#btnTplRecite'); await sleep(700);
   check('大作文模板可背', (await count('#paper .sent')) === 10, await count('#paper .sent'));
@@ -224,18 +214,6 @@ try {
   await click('#reviewList .rv-row'); await sleep(550);
   check('复习态按钮', (await txt('#btnNext')).includes('完成复习'), await txt('#btnNext'));
 
-  console.log('\n== 听写 ==');
-  await click('[data-view=dict]'); await sleep(350);
-  check('可听写 = 10（3 句型 + 1 大作文模板 + 6 小作文）', (await count('#dictChoose [data-id]')) === 10, await count('#dictChoose [data-id]'));
-  await click('#dictChoose [data-id=x-1]'); await sleep(650);
-  check('听写面板', await evaluate("!!document.querySelector('.dict-input')"));
-  check('中文提示', (await txt('.dict-cn')).length > 3);
-  check('进度 1 / 5', (await txt('.dict-score')).includes('1 / 5'), await txt('.dict-score'));
-  await evaluate("(()=>{const i=document.querySelector('#dictInput');i.value='Dear Lily:';i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()");
-  await sleep(500);
-  check('有反馈', (await txt('#dictFeedback')).length > 0, await txt('#dictFeedback'));
-  await shot('08-dict');
-
   console.log('\n== 统计 / 设置 ==');
   await click('#btnStats'); await sleep(400);
   check('统计弹窗', await evaluate("!document.querySelector('#modalStats').hidden"));
@@ -246,7 +224,7 @@ try {
   await click('[data-close=modalStats]'); await sleep(200);
   await click('#btnSettings'); await sleep(320);
   check('设置弹窗', await evaluate("!document.querySelector('#modalSettings').hidden"));
-  check('默认模式 6 项', (await count('#setMode option')) === 6, await count('#setMode option'));
+  check('默认模式 2 项', (await count('#setMode option')) === 2, await count('#setMode option'));
   await click('#setSize [data-size=l]'); await sleep(220);
   check('字号写入', (await evaluate("JSON.parse(localStorage.getItem('sunset-desk-v1')).settings.size")) === 'l');
   await shot('10-settings');
@@ -262,9 +240,9 @@ try {
   check('标题解析', (await txt('#rTitle')) === 'The Value of Reading', await txt('#rTitle'));
 
   console.log('\n== 快捷键 ==');
-  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'3',bubbles:true}))");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown',{key:'2',bubbles:true}))");
   await sleep(320);
-  check('按 3 切首字母', (await cls('#paper')).includes('mode-first'), await cls('#paper'));
+  check('按 2 切模糊显影', (await cls('#paper')).includes('mode-blur'), await cls('#paper'));
 
   console.log('\n== 移动端 ==');
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });

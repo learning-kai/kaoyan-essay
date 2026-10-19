@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>落日书桌 · 考研英语一作文背诵</title>
-<meta name="description" content="考研英语一作文背诵工坊：自己的大作文三段模板 + 小作文信件句库，六种背诵模式与艾宾浩斯复习。">
+<meta name="description" content="考研英语一作文背诵工坊：自己的大作文三段模板 + 小作文信件句库，整句全挖空拼写与艾宾浩斯复习。">
 <meta name="theme-color" content="#f3e8d3">
 <meta property="og:title" content="落日书桌 · 考研英语一作文背诵">
-<meta property="og:description" content="大作文三段模板 + 小作文信件句库，六种背诵模式，进度自动排复习。">
+<meta property="og:description" content="大作文三段模板 + 小作文信件句库，整句全挖空拼写，进度自动排复习。">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23f3e8d3'/%3E%3Ccircle cx='32' cy='38' r='13' fill='%23e2582b'/%3E%3Crect x='8' y='38' width='48' height='2.4' fill='%23221b14'/%3E%3Cpath d='M32 12v8M20 16l4 6M44 16l-4 6' stroke='%23e2582b' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,7 +38,6 @@
     <button class="tab" data-view="library"><span class="tab-no">03</span>选文</button>
     <button class="tab" data-view="recite"><span class="tab-no">04</span>背诵</button>
     <button class="tab" data-view="review"><span class="tab-no">05</span>复习</button>
-    <button class="tab" data-view="dict"><span class="tab-no">06</span>听写</button>
   </nav>
   <div class="mast-actions">
     <button class="ghost-btn" id="btnStats" title="学习统计">统计</button>
@@ -93,7 +92,7 @@
     <div class="tpl-toolbar">
       <button class="tool on" id="btnTplCn" title="显示中文">中</button>
       <button class="tool on" id="btnTplHint" title="显示槽位提示">槽</button>
-      <button class="primary-btn" id="btnTplRecite">用六种模式背这套模板 →</button>
+      <button class="primary-btn" id="btnTplRecite">用两种模式背这套模板 →</button>
     </div>
     <div id="tplBody"></div>
   </section>
@@ -159,15 +158,6 @@
     </div>
   </section>
 
-  <!-- ================= 听写 ================= -->
-  <section class="view" id="view-dict">
-    <div class="page-head">
-      <h2>听写 / 输入测试</h2>
-      <p>点开始后逐词朗读，你看着空白的句子把听到的内容打出来。空格会被忽略，标点不区分大小写。卡住了可以按 <kbd>Tab</kbd> 听下一个词。</p>
-    </div>
-    <div id="dictBody"></div>
-  </section>
-
 </main>
 
 <!-- 统计弹窗 -->
@@ -210,12 +200,8 @@
     <div class="setting">
       <label>默认背诵模式</label>
       <select id="setMode">
-        <option value="double">双层连续 · 蓝图</option>
-        <option value="hide">只显示中文</option>
-        <option value="first">首字母提示</option>
+        <option value="blank">填空拼写（整句全挖空）</option>
         <option value="blur">模糊显影</option>
-        <option value="blank">填空拼写</option>
-        <option value="type">整篇默写</option>
       </select>
     </div>
     <div class="setting">
