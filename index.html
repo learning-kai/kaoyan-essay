@@ -34,10 +34,11 @@
   </div>
   <nav class="tabs" role="tablist" aria-label="主导航">
     <button class="tab" data-view="template"><span class="tab-no">01</span>模板</button>
-    <button class="tab" data-view="library"><span class="tab-no">02</span>选文</button>
-    <button class="tab" data-view="recite"><span class="tab-no">03</span>背诵</button>
-    <button class="tab" data-view="review"><span class="tab-no">04</span>复习</button>
-    <button class="tab" data-view="dict"><span class="tab-no">05</span>听写</button>
+    <button class="tab" data-view="quiz"><span class="tab-no">02</span>练习</button>
+    <button class="tab" data-view="library"><span class="tab-no">03</span>选文</button>
+    <button class="tab" data-view="recite"><span class="tab-no">04</span>背诵</button>
+    <button class="tab" data-view="review"><span class="tab-no">05</span>复习</button>
+    <button class="tab" data-view="dict"><span class="tab-no">06</span>听写</button>
   </nav>
   <div class="mast-actions">
     <button class="ghost-btn" id="btnStats" title="学习统计">统计</button>
@@ -95,6 +96,15 @@
       <button class="primary-btn" id="btnTplRecite">用七种模式背这套模板 →</button>
     </div>
     <div id="tplBody"></div>
+  </section>
+
+  <!-- ================= 练习 ================= -->
+  <section class="view" id="view-quiz">
+    <div class="page-head">
+      <h2>闯关练习</h2>
+      <p>点词块把句子拼出来。答错的题会重新排队再来一遍，全部答对才算过关。</p>
+    </div>
+    <div id="quizBody"></div>
   </section>
 
   <!-- ================= 背诵 ================= -->

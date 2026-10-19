@@ -334,6 +334,7 @@
     $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + next));
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === next));
     if (next === 'library') renderLibrary();
+    if (next === 'quiz') renderQuiz();
     if (next === 'template') renderTemplate();
     if (next === 'recite') renderRecite();
     if (next === 'review') renderReview();
@@ -900,6 +901,348 @@
     };
     logStudy();
     renderDict();
+  }
+
+  /* ==================== 闯关练习 ==================== */
+
+  /* 音效：几行 WebAudio，不用下载素材 */
+  let AC = null;
+  function beep(freq, dur, type, vol) {
+    try {
+      AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+      if (AC.state === 'suspended') AC.resume();
+      const o = AC.createOscillator();
+      const g = AC.createGain();
+      o.type = type || 'sine';
+      o.frequency.value = freq;
+      o.connect(g); g.connect(AC.destination);
+      const t = AC.currentTime;
+      g.gain.setValueAtTime(vol || 0.05, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.start(t); o.stop(t + dur);
+    } catch (e) { /* 静音环境就算了 */ }
+  }
+  const sfxRight = () => { beep(660, .09); setTimeout(() => beep(990, .13), 85); };
+  const sfxWrong = () => { beep(240, .18, 'square', .04); };
+  const sfxWin = () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, .16), i * 105));
+
+  const shuffle = arr => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
+  S.quiz = S.quiz || { total: 0, correct: 0, best: 0, bestCombo: 0 };
+
+  /* 题源：模板按段、句库按类型、句型素材 */
+  function quizSources() {
+    const out = [];
+    const lin = templates().find(t => t.kind !== 'bank');
+    if (lin) {
+      out.push({
+        id: 'big',
+        name: '大作文模板',
+        items: lin.sections.reduce((a, s) => a.concat(s.sentences), [])
+      });
+    }
+    const bank = templates().find(t => t.kind === 'bank');
+    if (bank) {
+      (bank.types || []).forEach(ty => {
+        const items = pickForType(bank, ty.id).reduce((a, p) => a.concat(p.items), []);
+        out.push({ id: 'small-' + ty.id, name: '小作文·' + ty.name, items });
+      });
+      out.push({ id: 'small-all', name: '小作文·全部', items: bank.groups.reduce((a, g) => a.concat(g.sentences), []) });
+    }
+    const sent = (window.ESSAYS || [])
+      .filter(e => e.cat === 'sent')
+      .reduce((a, e) => a.concat(splitSentences(e.en).map((s, i) => ({ en: s.text, cn: (e.cn || [])[i] || '' }))), []);
+    if (sent.length) out.push({ id: 'sent', name: '句型素材', items: sent });
+    return out.filter(s => s.items.length);
+  }
+
+  /* 全部句子，用来给选择题造干扰项 */
+  function allQuizSentences() {
+    const set = [];
+    quizSources().forEach(s => s.items.forEach(it => set.push(it.en)));
+    return Array.from(new Set(set));
+  }
+
+  const tileSplit = s => String(s).trim().split(/\s+/).filter(Boolean);
+
+  let quiz = null;
+  let quizSource = null;
+
+  function startQuiz(sourceId) {
+    const srcs = quizSources();
+    if (!srcs.length) { toast('还没有可以练的句子'); return; }
+    const src = srcs.find(s => s.id === sourceId) || srcs[0];
+    quizSource = src.id;
+
+    const pool = src.items.filter(it => it && it.en && tileSplit(it.en).length >= 3);
+    const picked = shuffle(pool).slice(0, Math.min(10, pool.length));
+    if (!picked.length) { toast('这个题源太短了'); return; }
+
+    const others = allQuizSentences();
+    quiz = {
+      title: src.name,
+      items: picked.map((it, i) => {
+        const types = ['build', 'build', 'listen', 'build', 'choice'];
+        return {
+          type: types[i % types.length],
+          en: it.en,
+          cn: it.cn || '',
+          result: null,
+          extra: {}   // 运行时生成：词块、选项
+        };
+      }),
+      i: 0,
+      combo: 0,
+      maxCombo: 0,
+      correct: 0,
+      wrong: 0,
+      startedAt: Date.now(),
+      retry: 0,
+      pool: others,
+      finished: false
+    };
+    renderQuiz();
+  }
+
+  function buildPrompt(it) {
+    const tokens = tileSplit(it.en);
+    if (it.type === 'choice') {
+      const decoys = shuffle(quiz.pool.filter(s => s !== it.en && Math.abs(tileSplit(s).length - tokens.length) <= 6)).slice(0, 3);
+      const opts = shuffle([it.en].concat(decoys));
+      return { tokens, tokens2: null, opts, decoyCount: decoys.length };
+    }
+    // 干扰词块：从别的句子里抓两个词
+    const pool = quiz.pool.filter(s => s !== it.en);
+    const extra = [];
+    for (let k = 0; k < 2 && pool.length; k++) {
+      const w = tileSplit(pool[Math.floor(Math.random() * pool.length)]).filter(t => /^[A-Za-z]{3,}$/.test(t));
+      if (w.length) extra.push(w[Math.floor(Math.random() * w.length)]);
+    }
+    const bank = shuffle(tokens.concat(extra)).map((t, i) => ({ id: 't' + i, text: t }));
+    return { tokens, bank, extra };
+  }
+
+  function renderQuiz() {
+    const host = $('#quizBody');
+    if (!quiz) { renderQuizPicker(host); return; }
+
+    // 已作答的题不再重复渲染（切页回来时直接跳到下一题）
+    while (quiz.items[quiz.i] && quiz.items[quiz.i].solved) quiz.i++;
+    if (quiz.i >= quiz.items.length) {
+      if (!quiz.finished) finishQuiz();
+      renderQuizDone(host);
+      return;
+    }
+
+    const it = quiz.items[quiz.i];
+    const q = (it.extra && (it.extra.bank || it.extra.opts)) ? it.extra : buildPrompt(it);
+    it.extra = q;
+    if (!Array.isArray(it.picked)) it.picked = [];
+    it.solved = false;
+
+    const total = quiz.items.filter(x => !x.retry).length || 1;
+    const done = quiz.items.filter(x => !x.retry && x.solved).length;
+    const pct = (done / total) * 100;
+    const isChoice = it.type === 'choice';
+
+    host.innerHTML = `
+      <div class="qz-shell">
+        <div class="qz-top">
+          <button class="qz-quit" id="qzQuit" title="退出">✕</button>
+          <div class="qz-bar"><div class="qz-bar-fill" style="width:${pct}%"></div></div>
+          <div class="qz-combo ${quiz.combo >= 3 ? 'hot' : ''}">${quiz.combo >= 2 ? '🔥 ' + quiz.combo : ''}</div>
+        </div>
+
+        <div class="qz-card">
+          <div class="qz-type">${it.type === 'listen' ? '听音频，拼出句子' : it.type === 'choice' ? '选出正确的那句' : '把下面这句中文翻成英文'}</div>
+
+          ${it.type === 'listen'
+            ? `<button class="qz-play" id="qzPlay">🔊 点这里听</button>`
+            : `<p class="qz-cn">${esc(it.cn || '（这句没有中文提示）')}</p>`}
+
+          ${isChoice
+            ? `<div class="qz-opts">${q.opts.map((o, i) => `<button class="qz-opt" data-opt="${i}">${esc(o)}</button>`).join('')}</div>`
+            : `
+              <div class="qz-answer ${it.type === 'listen' ? 'ghosted' : ''}" id="qzAnswer"></div>
+              <div class="qz-bank" id="qzBank">
+                ${q.bank.map(t => `<button class="qz-tile" data-tile="${t.id}">${esc(t.text)}</button>`).join('')}
+              </div>`}
+        </div>
+
+        <div class="qz-foot">
+          ${isChoice
+            ? '<span class="qz-foot-hint">点一个选项</span>'
+            : `<button class="ghost-btn" id="qzUndo" title="撤掉最后一个">退一步</button>
+               <button class="primary-btn big" id="qzCheck" disabled>检查</button>`}
+        </div>
+
+        <div class="qz-feedback" id="qzFeedback" hidden></div>
+      </div>`;
+
+    if (it.type === 'listen') setTimeout(() => speak(it.en), 300);
+
+    const bank = $('#qzBank', host);
+    const ans = $('#qzAnswer', host);
+
+    const redraw = () => {
+      if (!bank || !ans) return;
+      ans.innerHTML = it.picked.length
+        ? it.picked.map(id => {
+            const t = q.bank.find(x => x.id === id);
+            return `<button class="qz-tile in" data-unpick="${id}">${esc(t.text)}</button>`;
+          }).join('')
+        : '<span class="qz-ph">点下面的词块，按顺序拼</span>';
+      $$('.qz-tile', bank).forEach(b => { b.disabled = it.picked.includes(b.dataset.tile); });
+      const ck = $('#qzCheck');
+      if (ck) ck.disabled = it.picked.length === 0;
+    };
+
+    if (bank) {
+      redraw();
+      bank.addEventListener('click', e => {
+        const b = e.target.closest('[data-tile]');
+        if (!b || it.solved) return;
+        it.picked.push(b.dataset.tile);
+        redraw();
+      });
+      ans.addEventListener('click', e => {
+        const b = e.target.closest('[data-unpick]');
+        if (!b || it.solved) return;
+        it.picked = it.picked.filter(id => id !== b.dataset.unpick);
+        redraw();
+      });
+      const undo = $('#qzUndo');
+      if (undo) undo.onclick = () => { if (!it.solved && it.picked.length) { it.picked.pop(); redraw(); } };
+    }
+
+    if (isChoice) {
+      $$('.qz-opt', host).forEach(b => b.onclick = () => {
+        if (it.solved) return;
+        const ok = q.opts[+b.dataset.opt] === it.en;
+        $$('.qz-opt', host).forEach(x => { x.classList.add('locked'); if (x === b) x.classList.add(ok ? 'right' : 'wrong'); });
+        settle(ok, it);
+      });
+    }
+
+    const play = $('#qzPlay');
+    if (play) play.onclick = () => speak(it.en);
+    $('#qzQuit').onclick = () => { if (confirm('退出这轮练习？进度不保留')) { quiz = null; renderQuiz(); } };
+    const ckBtn = $('#qzCheck');
+    if (ckBtn) ckBtn.onclick = () => {
+      if (it.solved) return;
+      const said = it.picked.map(id => q.bank.find(x => x.id === id).text).join(' ');
+      settle(normEn(said) === normEn(it.en), it);
+    };
+  }
+
+  function settle(ok, it) {
+    it.solved = true;
+    it.result = ok;
+    S.quiz.total++;
+    if (ok) {
+      S.quiz.correct++;
+      quiz.combo++;
+      quiz.maxCombo = Math.max(quiz.maxCombo, quiz.combo);
+      S.quiz.bestCombo = Math.max(S.quiz.bestCombo || 0, quiz.maxCombo);
+      sfxRight();
+    } else {
+      quiz.combo = 0;
+      sfxWrong();
+    }
+    saveSoft();
+
+    const fb = $('#qzFeedback');
+    if (!fb) return;
+    const answerHTML = `<p class="qz-fb-en">${esc(it.en)}</p>
+      ${it.cn ? `<p class="qz-fb-cn">${esc(it.cn)}</p>` : ''}`;
+    fb.hidden = false;
+    fb.className = 'qz-feedback ' + (ok ? 'ok' : 'bad') + ' show';
+    fb.innerHTML = `
+      <div class="qz-fb-head">
+        <span class="qz-fb-title">${ok ? '✓ 对了' : '✗ 再看看'}</span>
+        ${ok && quiz.combo >= 3 ? `<span class="qz-fb-combo">🔥 连对 ${quiz.combo}</span>` : ''}
+        <button class="ghost-btn" id="qzSpeak">🔊</button>
+      </div>
+      ${ok ? '' : answerHTML}
+      <button class="primary-btn big" id="qzNext">继续</button>`;
+    $('#qzSpeak').onclick = () => speak(it.en);
+
+    // 答错的题排到队尾再来一遍；每题最多补一次，避免一直做不完
+    if (!ok) {
+      quiz.wrong++;
+      if (!it.retry) {
+        quiz.items.push(Object.assign({}, it, { result: null, solved: false, picked: [], extra: null, retry: true }));
+      }
+    }
+
+    $('#qzNext').onclick = () => {
+      quiz.i++;
+      if (quiz.i >= quiz.items.length) { quiz.finished = true; finishQuiz(); }
+      renderQuiz();
+    };
+    logStudy();
+  }
+
+  function finishQuiz() {
+    const q = quiz;
+    const acc = Math.round((q.correct / Math.max(1, q.correct + q.wrong)) * 100);
+    S.quiz.best = Math.max(S.quiz.best || 0, acc);
+    save();
+    if (acc >= 80) { celebrate(); sfxWin(); }
+  }
+
+  function renderQuizDone(host) {
+    const q = quiz;
+    const acc = Math.round((q.correct / Math.max(1, q.correct + q.wrong)) * 100);
+    const secs = Math.round((Date.now() - q.startedAt) / 1000);
+    const mastered = acc === 100;
+    host.innerHTML = `
+      <div class="qz-done">
+        <div class="qz-done-ring ${mastered ? 'perfect' : ''}">${acc}<span>%</span></div>
+        <h3>${mastered ? '全部答对，这一套稳了' : acc >= 80 ? '不错，再刷一轮就熟了' : '还得多过几遍'}</h3>
+        <p class="qz-done-sub">${esc(q.title)} · ${q.items.filter(x => !x.retry).length} 题 · 用时 ${secs} 秒 · 最高连对 ${q.maxCombo}</p>
+        <div class="qz-done-stats">
+          <div><b>${S.quiz.correct}</b><span>累计答对</span></div>
+          <div><b>${S.quiz.total}</b><span>累计答题</span></div>
+          <div><b>${S.quiz.bestCombo || 0}</b><span>最长连对</span></div>
+        </div>
+        <div class="qz-done-actions">
+          <button class="primary-btn big" id="qzAgain">再来一轮</button>
+          <button class="ghost-btn" id="qzBack">换个题源</button>
+        </div>
+      </div>`;
+    $('#qzAgain').onclick = () => startQuiz(quizSource);
+    $('#qzBack').onclick = () => { quiz = null; renderQuiz(); };
+  }
+
+  function renderQuizPicker(host) {
+    const srcs = quizSources();
+    const acc = S.quiz.total ? Math.round(S.quiz.correct / S.quiz.total * 100) : 0;
+    host.innerHTML = `
+      <div class="qz-pick">
+        ${srcs.map(s => `
+          <button class="qz-pick-card" data-src="${s.id}">
+            <span class="qz-pick-name">${esc(s.name)}</span>
+            <span class="qz-pick-n">${s.items.length} 句</span>
+            <span class="qz-pick-go">开始 →</span>
+          </button>`).join('')}
+      </div>
+      <div class="qz-overview">
+        <div><b>${S.quiz.total}</b><span>累计答题</span></div>
+        <div><b>${acc}%</b><span>正确率</span></div>
+        <div><b>${S.quiz.bestCombo || 0}</b><span>最长连对</span></div>
+        <div><b>${S.quiz.best || 0}%</b><span>最好成绩</span></div>
+      </div>
+      <p class="hint small">每轮 10 题：点词块拼句、听音频拼句、四选一。答错的句子会排到队尾，本次再来一遍。</p>`;
+
+    $$('.qz-pick-card', host).forEach(b => b.onclick = () => startQuiz(b.dataset.src));
   }
 
   /* ==================== 统计 ==================== */
