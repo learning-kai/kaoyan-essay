@@ -670,6 +670,21 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
   border-color: rgba(226,88,43,.45);
   background: rgba(226,88,43,.08);
 }
+/* 答错重来：清空后停在原地，可以再检查一次 */
+.qz-retry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(180,54,31,.35);
+  background: rgba(180,54,31,.07);
+  animation: shake .3s ease;
+}
+.qz-retry-txt { font-family: var(--cjk); font-size: 13.5px; color: var(--bad); line-height: 1.6; flex: 1 1 180px; }
+.qz-reveal { font-size: 12.5px; padding: 4px 12px; }
 .qz-cn {
   font-family: var(--cjk);
   font-size: clamp(17px, 1vw + 12px, 21px);

@@ -842,7 +842,6 @@
       correct: 0,
       wrong: 0,
       startedAt: Date.now(),
-      retry: 0,
       pool: others,
       finished: false
     };
@@ -885,8 +884,8 @@
     if (!Array.isArray(it.picked)) it.picked = [];
     it.solved = false;
 
-    const total = quiz.items.filter(x => !x.retry).length || 1;
-    const done = quiz.items.filter(x => !x.retry && x.solved).length;
+    const total = quiz.items.length || 1;
+    const done = quiz.items.filter(x => x.solved).length;
     const pct = (done / total) * 100;
     const isChoice = it.type === 'choice';
 
@@ -903,6 +902,11 @@
             <span>${it.type === 'listen' ? '听音频，拼出句子' : it.type === 'choice' ? '选出正确的那句' : '把下面这句中文翻成英文'}</span>
             <span class="qz-mode-tag ${quiz.mode === 'order' ? 'order' : ''}">${quiz.mode === 'order' ? '顺序 ' + esc(quiz.readyRange) : '随机'}</span>
           </div>
+
+          ${it.misses ? `<div class="qz-retry">
+            <span class="qz-retry-txt">✗ 这次没拼对，已经清空，再拼一次就行</span>
+            <button class="ghost-btn qz-reveal" id="qzReveal">看答案</button>
+          </div>` : ''}
 
           ${it.type === 'listen'
             ? `<button class="qz-play" id="qzPlay">🔊 点这里听</button>`
@@ -974,6 +978,8 @@
 
     const play = $('#qzPlay');
     if (play) play.onclick = () => speak(it.en);
+    const reveal = $('#qzReveal');
+    if (reveal) reveal.onclick = () => revealAnswer(it);
     $('#qzQuit').onclick = () => { if (confirm('退出这轮练习？进度不保留')) { quiz = null; renderQuiz(); } };
     const ckBtn = $('#qzCheck');
     if (ckBtn) ckBtn.onclick = () => {
@@ -983,22 +989,8 @@
     };
   }
 
-  function settle(ok, it) {
-    it.solved = true;
-    it.result = ok;
-    S.quiz.total++;
-    if (ok) {
-      S.quiz.correct++;
-      quiz.combo++;
-      quiz.maxCombo = Math.max(quiz.maxCombo, quiz.combo);
-      S.quiz.bestCombo = Math.max(S.quiz.bestCombo || 0, quiz.maxCombo);
-      sfxRight();
-    } else {
-      quiz.combo = 0;
-      sfxWrong();
-    }
-    saveSoft();
-
+  /* 结算反馈：对了直接给「继续」；看答案时补上原句 */
+  function renderFeedback(it, ok, withAnswer) {
     const fb = $('#qzFeedback');
     if (!fb) return;
     const answerHTML = `<p class="qz-fb-en">${esc(it.en)}</p>
@@ -1007,28 +999,60 @@
     fb.className = 'qz-feedback ' + (ok ? 'ok' : 'bad') + ' show';
     fb.innerHTML = `
       <div class="qz-fb-head">
-        <span class="qz-fb-title">${ok ? '✓ 对了' : '✗ 再看看'}</span>
+        <span class="qz-fb-title">${ok ? '✓ 对了' : '正确答案'}</span>
         ${ok && quiz.combo >= 3 ? `<span class="qz-fb-combo">🔥 连对 ${quiz.combo}</span>` : ''}
         <button class="ghost-btn" id="qzSpeak">🔊</button>
       </div>
-      ${ok ? '' : answerHTML}
+      ${withAnswer ? answerHTML : ''}
       <button class="primary-btn big" id="qzNext">继续</button>`;
     $('#qzSpeak').onclick = () => speak(it.en);
-
-    // 答错的题排到队尾再来一遍；每题最多补一次，避免一直做不完
-    if (!ok) {
-      quiz.wrong++;
-      if (!it.retry) {
-        quiz.items.push(Object.assign({}, it, { result: null, solved: false, picked: [], extra: null, retry: true }));
-      }
-    }
-
     $('#qzNext').onclick = () => {
       quiz.i++;
       if (quiz.i >= quiz.items.length) { quiz.finished = true; finishQuiz(); }
       renderQuiz();
     };
+  }
+
+  /* 不想再拼了：直接摊开答案，这题记作没做对 */
+  function revealAnswer(it) {
+    it.solved = true;
+    it.result = false;
+    const bar = document.querySelector('.qz-retry');
+    if (bar) bar.remove();
+    saveSoft();
     logStudy();
+    renderFeedback(it, false, true);
+  }
+
+  function settle(ok, it) {
+    // 每题只在第一次检查时计入统计；之后重拼不再影响正确率
+    if (!it.counted) {
+      it.counted = true;
+      S.quiz.total++;
+      if (ok) { S.quiz.correct++; quiz.correct++; }
+      else quiz.wrong++;
+    }
+
+    if (ok) {
+      it.solved = true;
+      it.result = true;
+      quiz.combo++;
+      quiz.maxCombo = Math.max(quiz.maxCombo, quiz.combo);
+      S.quiz.bestCombo = Math.max(S.quiz.bestCombo || 0, quiz.maxCombo);
+      sfxRight();
+      saveSoft();
+      logStudy();
+      renderFeedback(it, true, false);
+      return;
+    }
+
+    // 答错：把已经点上的词块清空，原地重来，可以再检查一次
+    quiz.combo = 0;
+    sfxWrong();
+    it.misses = (it.misses || 0) + 1;
+    it.picked = [];
+    saveSoft();
+    renderQuiz();
   }
 
   function finishQuiz() {
@@ -1048,7 +1072,7 @@
       <div class="qz-done">
         <div class="qz-done-ring ${mastered ? 'perfect' : ''}">${acc}<span>%</span></div>
         <h3>${mastered ? '全部答对，这一套稳了' : acc >= 80 ? '不错，再刷一轮就熟了' : '还得多过几遍'}</h3>
-        <p class="qz-done-sub">${esc(q.title)} · ${q.items.filter(x => !x.retry).length} 题 · 用时 ${secs} 秒 · 最高连对 ${q.maxCombo}</p>
+        <p class="qz-done-sub">${esc(q.title)} · ${q.items.length} 题 · 用时 ${secs} 秒 · 最高连对 ${q.maxCombo}</p>
         <div class="qz-done-stats">
           <div><b>${S.quiz.correct}</b><span>累计答对</span></div>
           <div><b>${S.quiz.total}</b><span>累计答题</span></div>

@@ -122,21 +122,44 @@ if (!q1isChoice) {
 }
 await shotSafe('qz-02');
 
-console.log('\n== 答错会重排 ==');
+console.log('\n== 答错原地重来 ==');
 await click('#qzNext'); await sleep(500);
 let guard = 0;
 while ((await cnt('.qz-bank')) === 0 && guard++ < 6) { await click('#qzNext'); await sleep(400); }
 const beforeTiles = await cnt('#qzBank .qz-tile');
+const barBefore = await ev("document.querySelector('.qz-bar-fill').style.width");
 // 故意乱点一个错序
 await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');if(t)t.click();return 1;})()");
 await sleep(150);
 await click('#qzCheck'); await sleep(500);
-const fbCls = await ev("document.querySelector('#qzFeedback').className");
-if (fbCls.includes('bad')) {
-  check('答错显示红色反馈', true);
-  check('答错给出正确句子', (await txt('.qz-fb-en')).length > 5, await txt('.qz-fb-en'));
-  const lenBefore = await ev("window.__lenBefore = document.querySelectorAll('.qz-items').length");
+const badNow = (await cnt('.qz-retry')) === 1;
+if (badNow) {
+  check('答错给红色重来提示', true);
+  check('答错后已点词块被清空', (await cnt('#qzAnswer .qz-tile')) === 0, await cnt('#qzAnswer .qz-tile'));
+  check('答错后词块全部能再点', (await cnt('#qzBank .qz-tile:not(:disabled)')) === beforeTiles, [await cnt('#qzBank .qz-tile:not(:disabled)'), beforeTiles]);
+  check('答错不直接泄露答案', (await cnt('.qz-fb-en')) === 0, await cnt('.qz-fb-en'));
+  check('答错不推进进度条', (await ev("document.querySelector('.qz-bar-fill').style.width")) === barBefore, [await ev("document.querySelector('.qz-bar-fill').style.width"), barBefore]);
   check('连击被清零', (await txt('.qz-combo')).trim() === '' || !(await txt('.qz-combo')).includes('🔥'), await txt('.qz-combo'));
+
+  // 重新拼一次，再点一次检查
+  const r2 = await solveBuild();
+  check('能重新拼一次', r2.ok, r2.target);
+  await click('#qzCheck'); await sleep(500);
+  check('可以再检查一次', (await cnt('.qz-feedback.show')) === 1, await cnt('.qz-feedback.show'));
+  check('第二次答对是绿色反馈', (await ev("document.querySelector('#qzFeedback').className")).includes('ok'), await ev("document.querySelector('#qzFeedback').className"));
+  await click('#qzNext'); await sleep(500);
+
+  // 「看答案」逃生口
+  if ((await cnt('#qzBank .qz-tile')) > 0) {
+    await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');if(t)t.click();return 1;})()");
+    await sleep(120);
+    await click('#qzCheck'); await sleep(450);
+    check('下一题答错也有重来提示', (await cnt('.qz-retry')) === 1, await cnt('.qz-retry'));
+    await click('#qzReveal'); await sleep(400);
+    check('看答案能摊开原句', (await txt('.qz-fb-en')).length > 5, await txt('.qz-fb-en'));
+    check('看答案后可以继续', (await cnt('#qzNext')) === 1);
+    await click('#qzNext'); await sleep(400);
+  }
 } else {
   check('（该题恰好答对，跳过错误分支）', true);
 }
@@ -144,9 +167,11 @@ await shotSafe('qz-03');
 
 console.log('\n== 跑到结算页 ==');
 let steps = 0;
-while (steps++ < 40) {
+while (steps++ < 80) {
   if (await cnt('.qz-done')) break;
   if ((await cnt('.qz-feedback.show')) === 0) {
+    // 上一题答错停在原地：用「看答案」跳过，避免反复重拼
+    if ((await cnt('.qz-retry')) === 1) { await click('#qzReveal'); await sleep(320); continue; }
     // 有新题，尽量做对
     const isChoice = (await cnt('.qz-opt')) > 0;
     if (isChoice) {
