@@ -719,23 +719,6 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
   color: var(--ink);
   margin: 0 0 22px;
 }
-.qz-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--cjk);
-  font-size: 17px;
-  color: var(--solar-deep);
-  background: rgba(226,88,43,.1);
-  border: 1px solid rgba(226,88,43,.4);
-  border-radius: 99px;
-  padding: 12px 26px;
-  cursor: pointer;
-  margin-bottom: 18px;
-  transition: background .16s, transform .12s;
-}
-.qz-play:hover { background: rgba(226,88,43,.18); }
-.qz-play:active { transform: scale(.97); }
 
 .qz-answer {
   display: flex;
@@ -747,9 +730,40 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
   margin-bottom: 18px;
   border-bottom: 2px solid var(--line-strong);
   transition: border-color .2s;
+  touch-action: manipulation;
 }
 .qz-answer .qz-ph { font-size: 13.5px; color: var(--ink-3); padding: 6px; }
-.qz-answer.ghosted { border-bottom-color: rgba(226,88,43,.4); }
+
+/* 已选词块：左边一个把手，按住可拖动排序 */
+.qz-answer .qz-tile.in {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.qz-grip {
+  flex: none;
+  width: 12px;
+  height: 18px;
+  cursor: grab;
+  touch-action: none;          /* 只有把手拦滚动，词块主体照常能滚 */
+  background-image: radial-gradient(currentColor 1.1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: 0 1px;
+  color: rgba(226,88,43,.55);
+  opacity: .8;
+  border-radius: 2px;
+}
+.qz-grip:hover { color: var(--solar); opacity: 1; }
+.qz-answer .qz-tile.in.dragging {
+  cursor: grabbing;
+  z-index: 3;
+  pointer-events: none;   /* 让 elementFromPoint 能命中下面的词块 */
+  transform: scale(1.06) rotate(-1.5deg);
+  box-shadow: 0 10px 22px rgba(34,27,20,.22);
+  opacity: .96;
+  transition: transform .08s, box-shadow .12s;
+}
 
 .qz-bank { display: flex; flex-wrap: wrap; gap: 8px; }
 
@@ -787,27 +801,6 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
   min-height: 46px;
 }
 .qz-foot-hint { font-size: 13px; color: var(--ink-3); }
-
-.qz-opts { display: grid; gap: 10px; }
-.qz-opt {
-  font-family: var(--serif);
-  font-size: 16px;
-  line-height: 1.55;
-  text-align: left;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--line-strong);
-  border-bottom-width: 3px;
-  border-radius: 5px;
-  padding: 13px 16px;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, transform .1s;
-}
-.qz-opt:hover:not(.locked) { background: #fffdf7; border-color: var(--ink); }
-.qz-opt:active:not(.locked) { transform: translateY(2px); border-bottom-width: 1px; }
-.qz-opt.locked { cursor: default; }
-.qz-opt.right { border-color: var(--ok); background: rgba(31,111,74,.1); color: var(--ok); }
-.qz-opt.wrong { border-color: var(--bad); background: rgba(180,54,31,.08); color: var(--bad); }
 
 /* 底部反馈条 */
 .qz-feedback {
@@ -920,7 +913,6 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
 
 @media (max-width: 640px) {
   .qz-tile { font-size: 15.5px; padding: 7px 11px; }
-  .qz-opt { font-size: 15px; padding: 11px 13px; }
   .qz-overview { grid-template-columns: repeat(2, 1fr); gap: 16px; }
   .qz-foot { flex-direction: column-reverse; }
   .qz-foot > * { width: 100%; }

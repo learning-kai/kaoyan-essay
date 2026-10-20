@@ -67,6 +67,9 @@ check('第一题有中文提示', (await txt('.qz-cn')).length > 2, await txt('.
 check('词块已生成', (await cnt('#qzBank .qz-tile')) >= 3, await cnt('#qzBank .qz-tile'));
 await shotSafe('qz-01');
 check('未选词时检查按钮禁用', await ev("document.querySelector('#qzCheck').disabled") === true);
+check('没有选择题选项', (await cnt('.qz-opt')) === 0, await cnt('.qz-opt'));
+check('没有听音频按钮', (await cnt('#qzPlay')) === 0, await cnt('#qzPlay'));
+check('题型只有中文译英文', (await txt('.qz-type')).includes('中文翻成英文'), await txt('.qz-type'));
 
 // 朗读打桩：记录每一段被送进 speechSynthesis 的文本和语言
 // 注意：app 现在是一段念完再排下一段，所以桩要模拟 start/end，否则只会看到第一段
@@ -121,9 +124,8 @@ async function solveBuild() {
 }
 
 const q1type = await txt('.qz-type');
-const q1isChoice = (await cnt('.qz-opt')) > 0;
-console.log('  第一题类型:', q1type.trim(), '| 选择题:', q1isChoice);
-if (!q1isChoice) {
+console.log('  第一题类型:', q1type.trim());
+{
   await ev("window.__spoke=[]");
   const r = await solveBuild();
   check('能按顺序点出词块', r.ok, r.target);
@@ -138,10 +140,58 @@ if (!q1isChoice) {
     check('答对后整句被读一遍', (await ev("window.__spoke.filter(x=>x.includes('|en')).length")) >= 1, String(spoke2).slice(0, 160));
     check('方括号本身不会被念出来', await ev("window.__spoke.every(x=>x.indexOf('[')<0&&x.indexOf(']')<0)"), String(spoke2).slice(0, 160));
   }
-} else {
-  console.log('  （首题是选择题，走选择分支）');
 }
 await shotSafe('qz-02');
+
+console.log('\n== 已选词块可以拖动排序 ==');
+await click('#qzNext'); await sleep(500);
+{
+  let g = 0;
+  while ((await cnt('#qzBank .qz-tile')) === 0 && g++ < 6) { await click('#qzNext'); await sleep(400); }
+}
+{
+  // 点前 3 个词块，然后把最后一个拖到最前面
+  await ev(`(()=>{
+    [...document.querySelectorAll('#qzBank .qz-tile:not(:disabled)')].slice(0,3).forEach(t=>t.click());
+    return 1;
+  })()`);
+  await sleep(200);
+  const before = await ev("[...document.querySelectorAll('#qzAnswer [data-unpick]')].map(b=>b.textContent)");
+  check('已选词块排成一行', Array.isArray(before) && before.length === 3, before);
+
+  const box = await ev(`(()=>{
+    const a=document.querySelectorAll('#qzAnswer [data-unpick]');
+    const grip=a[2].querySelector('.qz-grip').getBoundingClientRect();
+    const dst=a[0].getBoundingClientRect();
+    return { sx: Math.round(grip.left+grip.width/2), sy: Math.round(grip.top+grip.height/2),
+             dx: Math.round(dst.left+4), dy: Math.round(dst.top+dst.height/2) };
+  })()`);
+  const pt = (type, x, y) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, pointerType: 'mouse' });
+  await pt('mousePressed', box.sx, box.sy);
+  await sleep(60);
+  await pt('mouseMoved', Math.round((box.sx + box.dx) / 2), Math.round((box.sy + box.dy) / 2));
+  await sleep(60);
+  await pt('mouseMoved', box.dx, box.dy);
+  await sleep(60);
+  await pt('mouseReleased', box.dx, box.dy);
+  await sleep(300);
+
+  const after = await ev("[...document.querySelectorAll('#qzAnswer [data-unpick]')].map(b=>b.textContent)");
+  check('拖动后顺序变了', JSON.stringify(after) !== JSON.stringify(before), { before, after });
+  check('被拖的词到了第一位', after[0] === before[2], { before, after });
+  check('拖动不会误删词块', after.length === 3, after);
+  check('词块总数没变', JSON.stringify([...after].sort()) === JSON.stringify([...before].sort()), { before, after });
+  await shotSafe('qz-drag');
+
+  // 拖完把已选词块清掉，回到干净的题目状态（点词块主体取消，不是点把手）
+  await ev(`(()=>{
+    let b;
+    while ((b = document.querySelector('#qzAnswer [data-unpick]'))) b.click();
+    return 1;
+  })()`);
+  await sleep(200);
+  check('点词块仍可取消', (await cnt('#qzAnswer .qz-tile')) === 0, await cnt('#qzAnswer .qz-tile'));
+}
 
 console.log('\n== 答错原地重来 ==');
 await click('#qzNext'); await sleep(500);
@@ -210,10 +260,7 @@ while (steps++ < 80) {
       continue;
     }
     // 有新题，尽量做对
-    const isChoice = (await cnt('.qz-opt')) > 0;
-    if (isChoice) {
-      await ev("(()=>{const o=document.querySelector('.qz-opt');if(o)o.click();return 1;})()");
-    } else {
+    {
       const r = await solveBuild();
       if (!r.ok) { await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');if(t)t.click();return 1;})()"); }
       await sleep(120);
@@ -245,7 +292,7 @@ check('退出回到题源选择', (await cnt('.qz-pick-card')) === 9, await cnt(
 console.log('\n== 小作文题源 ==');
 await click('[data-src="small-advice"]'); await sleep(600);
 check('建议信题源可练', (await cnt('.qz-shell')) === 1);
-check('有词块或选项', ((await cnt('#qzBank .qz-tile')) + (await cnt('.qz-opt'))) > 0, { tiles: await cnt('#qzBank .qz-tile'), opts: await cnt('.qz-opt') });
+check('小作文也是词块拼句', (await cnt('#qzBank .qz-tile')) > 0, { tiles: await cnt('#qzBank .qz-tile'), opts: await cnt('.qz-opt') });
 
 console.log('\n== 朗读：中文槽位也要念 ==');
 if (canSpeak) {

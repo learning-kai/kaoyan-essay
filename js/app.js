@@ -897,7 +897,7 @@
     return out.filter(s => s.items.length);
   }
 
-  /* 全部句子，用来给选择题造干扰项 */
+  /* 全部句子，用来给干扰词块抽词 */
   function allQuizSentences() {
     const set = [];
     quizSources().forEach(s => s.items.forEach(it => set.push(it.en)));
@@ -940,16 +940,13 @@
       title: src.name,
       mode: quizRoundMode,
       readyRange: quizRoundMode === 'order' ? `${from}–${to} / ${pool.length}` : '',
-      items: picked.map((it, i) => {
-        const types = ['build', 'build', 'listen', 'build', 'choice'];
-        return {
-          type: types[i % types.length],
-          en: it.en,
-          cn: it.cn || '',
-          result: null,
-          extra: {}   // 运行时生成：词块、选项
-        };
-      }),
+      items: picked.map(it => ({
+        type: 'build',
+        en: it.en,
+        cn: it.cn || '',
+        result: null,
+        extra: {}   // 运行时生成：词块
+      })),
       i: 0,
       combo: 0,
       maxCombo: 0,
@@ -962,14 +959,10 @@
     renderQuiz();
   }
 
+  /* 每道题只有一种玩法：给中文，点词块拼出英文。
+   * 干扰词块从别的句子里抓两个，让「挑词」也有点难度。 */
   function buildPrompt(it) {
     const tokens = tileSplit(it.en);
-    if (it.type === 'choice') {
-      const decoys = shuffle(quiz.pool.filter(s => s !== it.en && Math.abs(tileSplit(s).length - tokens.length) <= 6)).slice(0, 3);
-      const opts = shuffle([it.en].concat(decoys));
-      return { tokens, tokens2: null, opts, decoyCount: decoys.length };
-    }
-    // 干扰词块：从别的句子里抓两个词
     const pool = quiz.pool.filter(s => s !== it.en);
     const extra = [];
     for (let k = 0; k < 2 && pool.length; k++) {
@@ -994,7 +987,7 @@
     }
 
     const it = quiz.items[quiz.i];
-    const q = (it.extra && (it.extra.bank || it.extra.opts)) ? it.extra : buildPrompt(it);
+    const q = (it.extra && it.extra.bank) ? it.extra : buildPrompt(it);
     it.extra = q;
     if (!Array.isArray(it.picked)) it.picked = [];
     it.solved = false;
@@ -1002,7 +995,6 @@
     const total = quiz.items.length || 1;
     const done = quiz.items.filter(x => x.solved).length;
     const pct = (done / total) * 100;
-    const isChoice = it.type === 'choice';
 
     host.innerHTML = `
       <div class="qz-shell">
@@ -1014,7 +1006,7 @@
 
         <div class="qz-card">
           <div class="qz-type">
-            <span>${it.type === 'listen' ? '听音频，拼出句子' : it.type === 'choice' ? '选出正确的那句' : '把下面这句中文翻成英文'}</span>
+            <span>把下面这句中文翻成英文</span>
             <span class="qz-mode-tag ${quiz.mode === 'order' ? 'order' : ''}">${quiz.mode === 'order' ? '顺序 ' + esc(quiz.readyRange) : '随机'}</span>
           </div>
 
@@ -1025,37 +1017,27 @@
 
           ${it.revealed ? `<div class="qz-revealed" id="qzRevealed">
             <p class="qz-revealed-en">${esc(it.en)}</p>
-            ${it.type === 'listen' && it.cn ? `<p class="qz-revealed-cn">${esc(it.cn)}</p>` : ''}
             <div class="qz-revealed-foot">
               <span class="qz-revealed-hint">照着答案把词块再拼一遍，然后点「检查」；不想拼就跳过。</span>
               <button class="ghost-btn qz-skip" id="qzSkip">跳过这题</button>
             </div>
           </div>` : ''}
 
-          ${it.type === 'listen'
-            ? `<button class="qz-play" id="qzPlay">🔊 点这里听</button>`
-            : `<p class="qz-cn">${esc(it.cn || '（这句没有中文提示）')}</p>`}
+          <p class="qz-cn">${esc(it.cn || '（这句没有中文提示）')}</p>
 
-          ${isChoice
-            ? `<div class="qz-opts">${q.opts.map((o, i) => `<button class="qz-opt" data-opt="${i}">${esc(o)}</button>`).join('')}</div>`
-            : `
-              <div class="qz-answer ${it.type === 'listen' ? 'ghosted' : ''}" id="qzAnswer"></div>
-              <div class="qz-bank" id="qzBank">
-                ${q.bank.map(t => `<button class="qz-tile" data-tile="${t.id}">${esc(t.text)}</button>`).join('')}
-              </div>`}
+          <div class="qz-answer" id="qzAnswer"></div>
+          <div class="qz-bank" id="qzBank">
+            ${q.bank.map(t => `<button class="qz-tile" data-tile="${t.id}">${esc(t.text)}</button>`).join('')}
+          </div>
         </div>
 
         <div class="qz-foot">
-          ${isChoice
-            ? '<span class="qz-foot-hint">点一个选项</span>'
-            : `<button class="ghost-btn" id="qzUndo" title="撤掉最后一个">退一步</button>
-               <button class="primary-btn big" id="qzCheck" disabled>检查</button>`}
+          <button class="ghost-btn" id="qzUndo" title="撤掉最后一个">退一步</button>
+          <button class="primary-btn big" id="qzCheck" disabled>检查</button>
         </div>
 
         <div class="qz-feedback" id="qzFeedback" hidden></div>
       </div>`;
-
-    if (it.type === 'listen') setTimeout(() => speak(it.en), 300);
 
     const bank = $('#qzBank', host);
     const ans = $('#qzAnswer', host);
@@ -1065,9 +1047,11 @@
       ans.innerHTML = it.picked.length
         ? it.picked.map(id => {
             const t = q.bank.find(x => x.id === id);
-            return `<button class="qz-tile in" data-unpick="${id}">${esc(t.text)}</button>`;
+            return `<button class="qz-tile in" data-unpick="${id}">
+              <span class="qz-grip" aria-hidden="true" title="按住拖动换位置"></span>${esc(t.text)}
+            </button>`;
           }).join('')
-        : '<span class="qz-ph">点下面的词块，按顺序拼</span>';
+        : '<span class="qz-ph">点下面的词块，按顺序拼（拖动词块左边的把手可以调顺序）</span>';
       $$('.qz-tile', bank).forEach(b => { b.disabled = it.picked.includes(b.dataset.tile); });
       const ck = $('#qzCheck');
       if (ck) ck.disabled = it.picked.length === 0;
@@ -1075,6 +1059,55 @@
 
     if (bank) {
       redraw();
+      let suppressClick = false;
+
+      /* 已选词块可以拖动排序：按住词块左边的把手拖。
+       * 只有把手拦触摸滚动（touch-action:none），词块主体照常可点、页面照常能滚。
+       * 拖动时直接在 DOM 里挪节点、不重绘，松手才把顺序写回 it.picked。 */
+      let drag = null;
+      const startDrag = e => {
+        if (!drag || drag.started) return;
+        drag.started = true;
+        drag.el.classList.add('dragging');
+        try { drag.el.setPointerCapture(e.pointerId); } catch (_) {}
+      };
+      const endDrag = () => {
+        if (!drag) return;
+        if (drag.started) {
+          drag.el.classList.remove('dragging');
+          it.picked = [...ans.querySelectorAll('[data-unpick]')].map(b => b.dataset.unpick);
+          // 拖动结束后浏览器还会补一个 click，别让它把词块当成"取消选择"
+          suppressClick = true;
+          setTimeout(() => { suppressClick = false; }, 0);
+        }
+        drag = null;
+      };
+
+      ans.addEventListener('pointerdown', e => {
+        const grip = e.target.closest('.qz-grip');
+        const el = grip && grip.closest('[data-unpick]');
+        if (!el || it.solved || e.button > 0) return;
+        drag = { el, x: e.clientX, y: e.clientY, started: false, pointerId: e.pointerId };
+        e.preventDefault();   // 别让按住把手变成选中文字
+      });
+      ans.addEventListener('pointermove', e => {
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        if (!drag.started) {
+          if (Math.abs(e.clientX - drag.x) < 6 && Math.abs(e.clientY - drag.y) < 6) return;
+          startDrag(e);
+        }
+        e.preventDefault();
+        const over = document.elementFromPoint(e.clientX, e.clientY);
+        const target = over && over.closest('[data-unpick]');
+        if (target && target !== drag.el) {
+          const r = target.getBoundingClientRect();
+          const after = e.clientX > r.left + r.width / 2;
+          ans.insertBefore(drag.el, after ? target.nextSibling : target);
+        }
+      });
+      ans.addEventListener('pointerup', endDrag);
+      ans.addEventListener('pointercancel', endDrag);
+
       bank.addEventListener('click', e => {
         const b = e.target.closest('[data-tile]');
         if (!b || it.solved) return;
@@ -1084,7 +1117,8 @@
       });
       ans.addEventListener('click', e => {
         const b = e.target.closest('[data-unpick]');
-        if (!b || it.solved) return;
+        if (!b || it.solved || suppressClick) return;
+        if (e.target.closest('.qz-grip')) return;   // 把手只负责拖，不负责删
         it.picked = it.picked.filter(id => id !== b.dataset.unpick);
         redraw();
         speak(b.textContent);
@@ -1093,17 +1127,6 @@
       if (undo) undo.onclick = () => { if (!it.solved && it.picked.length) { it.picked.pop(); redraw(); } };
     }
 
-    if (isChoice) {
-      $$('.qz-opt', host).forEach(b => b.onclick = () => {
-        if (it.solved) return;
-        const ok = q.opts[+b.dataset.opt] === it.en;
-        $$('.qz-opt', host).forEach(x => { x.classList.add('locked'); if (x === b) x.classList.add(ok ? 'right' : 'wrong'); });
-        settle(ok, it);
-      });
-    }
-
-    const play = $('#qzPlay');
-    if (play) play.onclick = () => speak(it.en);
     const reveal = $('#qzReveal');
     if (reveal) reveal.onclick = () => {
       it.revealed = !it.revealed;
@@ -1245,7 +1268,7 @@
         <div><b>${S.quiz.bestCombo || 0}</b><span>最长连对</span></div>
         <div><b>${S.quiz.best || 0}%</b><span>最好成绩</span></div>
       </div>
-      <p class="hint small">每轮 10 题：点词块拼句、听音频拼句、四选一。检查不对会清空重拼，可以一直改到对为止。</p>`;
+      <p class="hint small">每轮 10 题：给中文，点词块拼出英文。已选的词块可以拖动调顺序；检查不对会清空重拼，可以一直改到对为止。</p>`;
 
     $$('[data-qmode]', host).forEach(b => b.onclick = () => {
       S.settings.quizMode = b.dataset.qmode;
