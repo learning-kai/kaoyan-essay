@@ -1121,7 +1121,7 @@
         <div><b>${S.quiz.bestCombo || 0}</b><span>最长连对</span></div>
         <div><b>${S.quiz.best || 0}%</b><span>最好成绩</span></div>
       </div>
-      <p class="hint small">每轮 10 题：点词块拼句、听音频拼句、四选一。答错的句子会排到队尾，本次再来一遍。</p>`;
+      <p class="hint small">每轮 10 题：点词块拼句、听音频拼句、四选一。检查不对会清空重拼，可以一直改到对为止。</p>`;
 
     $$('[data-qmode]', host).forEach(b => b.onclick = () => {
       S.settings.quizMode = b.dataset.qmode;
