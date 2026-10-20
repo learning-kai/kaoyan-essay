@@ -68,6 +68,20 @@ check('词块已生成', (await cnt('#qzBank .qz-tile')) >= 3, await cnt('#qzBan
 await shotSafe('qz-01');
 check('未选词时检查按钮禁用', await ev("document.querySelector('#qzCheck').disabled") === true);
 
+// 朗读打桩：记录每一段被送进 speechSynthesis 的文本和语言
+const canSpeak = await ev("(()=>{try{window.__spoke=[];window.speechSynthesis.speak=u=>window.__spoke.push(u.text+'|'+u.lang);window.speechSynthesis.cancel=()=>{};return true;}catch(e){return false;}})()");
+if (canSpeak) {
+  await ev("window.__spoke=[]");
+  await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');t.click();return 1})()");
+  await sleep(200);
+  const spoke1 = await ev("JSON.stringify(window.__spoke)");
+  check('点词块会读这个词', (await ev("window.__spoke.length")) >= 1, spoke1);
+  check('读的是英文音', String(spoke1).includes('en'), spoke1);
+  await ev("(()=>{const b=document.querySelector('#qzAnswer [data-unpick]');if(b)b.click();return 1})()");
+  await sleep(200);
+  check('取消选择不再残留词块', (await cnt('#qzAnswer .qz-tile')) === 0, await cnt('#qzAnswer .qz-tile'));
+}
+
 // 用页面里的数据推算目标句：找出能覆盖全部词块的模板句
 const solveExpr = `(()=>{
   const all=[];
@@ -109,6 +123,7 @@ const q1type = await txt('.qz-type');
 const q1isChoice = (await cnt('.qz-opt')) > 0;
 console.log('  第一题类型:', q1type.trim(), '| 选择题:', q1isChoice);
 if (!q1isChoice) {
+  await ev("window.__spoke=[]");
   const r = await solveBuild();
   check('能按顺序点出词块', r.ok, r.target);
   check('检查按钮已启用', await ev("document.querySelector('#qzCheck').disabled") === false);
@@ -117,6 +132,11 @@ if (!q1isChoice) {
   check('答对时是绿色反馈', (await ev("document.querySelector('#qzFeedback').className")).includes('ok'), await ev("document.querySelector('#qzFeedback').className"));
   check('连击计数显示', (await txt('.qz-combo')).trim().length >= 0);
   check('答对后不展示答案（奖励）', (await cnt('.qz-fb-en')) === 0, await cnt('.qz-fb-en'));
+  if (canSpeak) {
+    const spoke2 = await ev("JSON.stringify(window.__spoke)");
+    check('答对后整句被读一遍', (await ev("window.__spoke.filter(x=>x.includes('|en')).length")) >= 1, String(spoke2).slice(0, 160));
+    check('方括号本身不会被念出来', await ev("window.__spoke.every(x=>x.indexOf('[')<0&&x.indexOf(']')<0)"), String(spoke2).slice(0, 160));
+  }
 } else {
   console.log('  （首题是选择题，走选择分支）');
 }
@@ -225,6 +245,21 @@ console.log('\n== 小作文题源 ==');
 await click('[data-src="small-advice"]'); await sleep(600);
 check('建议信题源可练', (await cnt('.qz-shell')) === 1);
 check('有词块或选项', ((await cnt('#qzBank .qz-tile')) + (await cnt('.qz-opt'))) > 0, { tiles: await cnt('#qzBank .qz-tile'), opts: await cnt('.qz-opt') });
+
+console.log('\n== 朗读：中文槽位也要念 ==');
+if (canSpeak) {
+  await ev("(()=>{const b=document.querySelector('[data-view=template]');if(b)b.click();return 1})()"); await sleep(500);
+  await ev("(()=>{const b=document.querySelector('#btnTplRecite');if(b)b.click();return 1})()"); await sleep(800);
+  await ev("window.__spoke=[]");
+  await ev("(()=>{const b=document.querySelector('#paper .sent .speak-btn');if(b)b.click();return 1})()");
+  await sleep(500);
+  const sp = await ev("JSON.stringify(window.__spoke)");
+  check('范文句子能整句朗读', (await ev("window.__spoke.length")) >= 2, String(sp).slice(0, 200));
+  check('英文部分用英文音', (await ev("window.__spoke.filter(x=>x.includes('|en')).length")) >= 1, String(sp).slice(0, 200));
+  check('中文槽位用中文音', (await ev("window.__spoke.filter(x=>x.includes('|zh')).length")) >= 1, String(sp).slice(0, 200));
+  check('槽位里的中文被念出来', await ev("window.__spoke.some(x=>x.indexOf('主体')>=0)"), String(sp).slice(0, 200));
+  check('方括号不会被念出来', await ev("window.__spoke.every(x=>x.indexOf('[')<0&&x.indexOf(']')<0)"), String(sp).slice(0, 200));
+}
 
 console.log('\n== 切页不丢状态 ==');
 await click('[data-view="template"]'); await sleep(400);

@@ -233,16 +233,57 @@
     return best || same[0] || voices.find(v => v.lang && v.lang.startsWith('en')) || null;
   }
 
+  function pickZhVoice() {
+    const same = voices.filter(v => v.lang && v.lang.replace('_', '-').toLowerCase().startsWith('zh'));
+    const best = same.find(v => /Natural|Enhanced|Premium|Xiaoxiao|Tingting|Huihui|Yaoyao|Google|Microsoft/i.test(v.name));
+    return best || same[0] || null;
+  }
+
+  const CN_CHAR = /[\u4e00-\u9fa5]/;
+
+  /* 把句子切成「英文段 / 方括号里的中文占位符」，
+   * 这样 [主体] 这类槽位也能用中文音念出来，而不是被英文音读成乱码或跳过。 */
+  function splitMixed(text) {
+    const s = String(text);
+    const out = [];
+    const re = /\[([^\]]*)\]/g;
+    let last = 0, m;
+    while ((m = re.exec(s))) {
+      if (m.index > last) out.push({ t: s.slice(last, m.index), cn: false });
+      out.push({ t: m[1], cn: true });
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) out.push({ t: s.slice(last), cn: false });
+    return out;
+  }
+
   function speak(text, opts = {}) {
     if (!synth) { toast('当前浏览器不支持朗读'); return; }
     synth.cancel();
-    const u = new SpeechSynthesisUtterance(String(text).replace(/\s+/g, ' ').trim());
-    u.lang = S.settings.accent;
-    u.rate = opts.rate || S.settings.rate;
-    const v = pickVoice();
-    if (v) u.voice = v;
-    if (opts.onend) u.onend = opts.onend;
-    synth.speak(u);
+    const rate = opts.rate || S.settings.rate;
+    const en = pickVoice();
+    const zh = pickZhVoice();
+    let spoke = 0;
+
+    splitMixed(text).forEach(p => {
+      // 中文占位符只留字；英文段去掉模板里的 + ( ) [ ] 记号，只留字母和标点
+      const raw = p.cn
+        ? p.t.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, ' ')
+        : p.t.replace(/[+()[\]{}]/g, ' ');
+      const clean = raw.replace(/\s+/g, ' ').trim();
+      if (!clean || !/[A-Za-z0-9\u4e00-\u9fa5]/.test(clean)) return;
+      const isCn = CN_CHAR.test(clean);
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = isCn ? 'zh-CN' : S.settings.accent;
+      u.rate = rate;
+      if (isCn) { if (zh) u.voice = zh; }
+      else if (en) u.voice = en;
+      if (opts.onend) u.onend = opts.onend;
+      synth.speak(u);
+      spoke++;
+    });
+
+    if (!spoke && opts.onend) opts.onend();
   }
   const stopSpeak = () => { if (synth) synth.cancel(); };
 
@@ -869,6 +910,7 @@
   function renderQuiz() {
     const host = $('#quizBody');
     if (!quiz) { renderQuizPicker(host); return; }
+    stopSpeak();   // 换题时掐掉上一题还没读完的语音
 
     // 已作答的题不再重复渲染（切页回来时直接跳到下一题）
     while (quiz.items[quiz.i] && quiz.items[quiz.i].solved) quiz.i++;
@@ -965,12 +1007,14 @@
         if (!b || it.solved) return;
         it.picked.push(b.dataset.tile);
         redraw();
+        speak(b.textContent);   // 点一个词块读一个词，像多邻国那样
       });
       ans.addEventListener('click', e => {
         const b = e.target.closest('[data-unpick]');
         if (!b || it.solved) return;
         it.picked = it.picked.filter(id => id !== b.dataset.unpick);
         redraw();
+        speak(b.textContent);
       });
       const undo = $('#qzUndo');
       if (undo) undo.onclick = () => { if (!it.solved && it.picked.length) { it.picked.pop(); redraw(); } };
@@ -1049,6 +1093,7 @@
       saveSoft();
       logStudy();
       renderFeedback(it);
+      speak(it.en);   // 答对了把整句读一遍，[槽位] 也一起读出来
       return;
     }
 
