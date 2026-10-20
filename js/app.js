@@ -233,10 +233,17 @@
     return best || same[0] || voices.find(v => v.lang && v.lang.startsWith('en')) || null;
   }
 
-  function pickZhVoice() {
+  /* 中文音色按「试的先后」排成一个列表，而不是只挑一个：
+   * Chromium 的朗读队列里，从在线音色切到本地 SAPI 音色时，切过去那段
+   * 经常一声不响（尤其是本地中文音），所以优先挑和英文音色同源的
+   * ——在线配在线、本地配本地，不触发切换；同源那个起不来再换下一个。 */
+  function zhVoices(enVoice) {
     const same = voices.filter(v => v.lang && v.lang.replace('_', '-').toLowerCase().startsWith('zh'));
-    const best = same.find(v => /Natural|Enhanced|Premium|Xiaoxiao|Tingting|Huihui|Yaoyao|Google|Microsoft/i.test(v.name));
-    return best || same[0] || null;
+    if (!same.length) return [];
+    const good = v => /Natural|Enhanced|Premium|Xiaoxiao|Tingting|Huihui|Yaoyao|Google|Microsoft/i.test(v.name);
+    const aligned = enVoice ? same.filter(v => v.localService === enVoice.localService) : same.slice();
+    const rest = same.filter(v => aligned.indexOf(v) < 0);
+    return aligned.filter(good).concat(aligned.filter(v => !good(v)), rest.filter(good), rest.filter(v => !good(v)));
   }
 
   const CN_CHAR = /[\u4e00-\u9fa5]/;
@@ -257,35 +264,90 @@
     return out;
   }
 
+  /* 一次只往队列里放一句，念完再放下一句。
+   * 原因：Chromium 把好几段不同音色的 utterance 一次性排进队列时，切音色
+   * 那一段经常「排上了但不开口」，后面的全跟着卡住——英文念完，中文槽位
+   * 就没声了。串行 + 看门狗能保证卡住的那段被跳过，不会拖死整句。 */
+  let speakToken = 0;
+
   function speak(text, opts = {}) {
     if (!synth) { toast('当前浏览器不支持朗读'); return; }
+    const token = ++speakToken;
     synth.cancel();
+
     const rate = opts.rate || S.settings.rate;
     const en = pickVoice();
-    const zh = pickZhVoice();
-    let spoke = 0;
+    const zhList = zhVoices(en);
 
-    splitMixed(text).forEach(p => {
+    const parts = splitMixed(text).map(p => {
       // 中文占位符只留字；英文段去掉模板里的 + ( ) [ ] 记号，只留字母和标点
       const raw = p.cn
         ? p.t.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, ' ')
         : p.t.replace(/[+()[\]{}]/g, ' ');
-      const clean = raw.replace(/\s+/g, ' ').trim();
-      if (!clean || !/[A-Za-z0-9\u4e00-\u9fa5]/.test(clean)) return;
-      const isCn = CN_CHAR.test(clean);
-      const u = new SpeechSynthesisUtterance(clean);
-      u.lang = isCn ? 'zh-CN' : S.settings.accent;
-      u.rate = rate;
-      if (isCn) { if (zh) u.voice = zh; }
-      else if (en) u.voice = en;
-      if (opts.onend) u.onend = opts.onend;
-      synth.speak(u);
-      spoke++;
-    });
+      return { clean: raw.replace(/\s+/g, ' ').trim(), cn: p.cn };
+    }).filter(p => p.clean && /[A-Za-z0-9\u4e00-\u9fa5]/.test(p.clean));
 
-    if (!spoke && opts.onend) opts.onend();
+    if (!parts.length) { if (opts.onend) opts.onend(); return; }
+
+    let i = 0;
+    const next = () => {
+      if (token !== speakToken) return;
+      if (i >= parts.length) { if (opts.onend) opts.onend(); return; }
+
+      const p = parts[i];
+      const isCn = CN_CHAR.test(p.clean);
+      // 中文依次试：先试和英文音色同源的，再试其他（最多试 3 个，别让一句拖太久）
+      const cands = isCn ? (zhList.length ? zhList.slice(0, 3) : [null]) : [en];
+      let ci = 0;
+
+      const attempt = () => {
+        if (token !== speakToken) return;
+        const voice = cands[ci] || null;
+        const u = new SpeechSynthesisUtterance(p.clean);
+        u.lang = isCn ? 'zh-CN' : S.settings.accent;
+        u.rate = rate;
+        if (voice) u.voice = voice;
+
+        // 每段只结算一次：onend / onerror / 看门狗谁先到算谁，避免重复跳段
+        let settled = false, started = false, watch = null;
+        const settle = fn => {
+          if (settled) return;
+          settled = true;
+          if (watch) { clearTimeout(watch); watch = null; }
+          fn();
+        };
+        const advance = () => settle(() => { i++; next(); });
+        const forceNext = () => settle(() => { synth.cancel(); i++; next(); });
+        const retry = () => settle(() => {
+          if (token !== speakToken) return;
+          if (ci + 1 < cands.length) {
+            ci++;
+            synth.cancel();                 // 把卡住的那段清掉再换音色
+            setTimeout(attempt, 60);
+          } else { i++; next(); }           // 这个音色也念不出来，跳过这段
+        });
+
+        u.onstart = () => {
+          started = true;
+          if (watch) { clearTimeout(watch); watch = null; }
+          // 已经开始念了，只防「念到一半再也不结束」
+          watch = setTimeout(forceNext, 4000 + p.clean.length * 400);
+        };
+        u.onend = advance;
+        u.onerror = retry;
+
+        // 看门狗：Chromium 有时既不 start 也不 end，6 秒没动静就当没念出来
+        watch = setTimeout(() => { if (!started) retry(); }, 6000);
+        synth.speak(u);
+      };
+
+      attempt();
+    };
+
+    // cancel 之后马上 speak，Chromium 偶尔会把第一段丢掉，隔一拍再排
+    setTimeout(next, 60);
   }
-  const stopSpeak = () => { if (synth) synth.cancel(); };
+  const stopSpeak = () => { speakToken++; if (synth) synth.cancel(); };
 
   /* ==================== 进度 ==================== */
   function getProg(id) {

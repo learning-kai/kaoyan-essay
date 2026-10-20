@@ -69,7 +69,8 @@ await shotSafe('qz-01');
 check('未选词时检查按钮禁用', await ev("document.querySelector('#qzCheck').disabled") === true);
 
 // 朗读打桩：记录每一段被送进 speechSynthesis 的文本和语言
-const canSpeak = await ev("(()=>{try{window.__spoke=[];window.speechSynthesis.speak=u=>window.__spoke.push(u.text+'|'+u.lang);window.speechSynthesis.cancel=()=>{};return true;}catch(e){return false;}})()");
+// 注意：app 现在是一段念完再排下一段，所以桩要模拟 start/end，否则只会看到第一段
+const canSpeak = await ev("(()=>{try{window.__spoke=[];window.speechSynthesis.speak=u=>{window.__spoke.push(u.text+'|'+u.lang);setTimeout(()=>{try{u.onstart&&u.onstart()}catch(e){}setTimeout(()=>{try{u.onend&&u.onend()}catch(e){}},20)},20)};window.speechSynthesis.cancel=()=>{};return true;}catch(e){return false;}})()");
 if (canSpeak) {
   await ev("window.__spoke=[]");
   await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');t.click();return 1})()");
@@ -252,7 +253,7 @@ if (canSpeak) {
   await ev("(()=>{const b=document.querySelector('#btnTplRecite');if(b)b.click();return 1})()"); await sleep(800);
   await ev("window.__spoke=[]");
   await ev("(()=>{const b=document.querySelector('#paper .sent .speak-btn');if(b)b.click();return 1})()");
-  await sleep(500);
+  await sleep(1200);
   const sp = await ev("JSON.stringify(window.__spoke)");
   check('范文句子能整句朗读', (await ev("window.__spoke.length")) >= 2, String(sp).slice(0, 200));
   check('英文部分用英文音', (await ev("window.__spoke.filter(x=>x.includes('|en')).length")) >= 1, String(sp).slice(0, 200));
