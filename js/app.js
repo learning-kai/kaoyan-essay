@@ -233,17 +233,27 @@
     return best || same[0] || voices.find(v => v.lang && v.lang.startsWith('en')) || null;
   }
 
-  /* 中文音色按「试的先后」排成一个列表，而不是只挑一个：
-   * Chromium 的朗读队列里，从在线音色切到本地 SAPI 音色时，切过去那段
-   * 经常一声不响（尤其是本地中文音），所以优先挑和英文音色同源的
-   * ——在线配在线、本地配本地，不触发切换；同源那个起不来再换下一个。 */
+  /* 中文音色按「试的先后」排成一个列表，而不是只挑一个。排序看三件事：
+   * 1. 必须是普通话：zh-CN 最优先，台湾国语次之，粤语（zh-HK）垫底——
+   *    以前只按「lang 以 zh 开头」筛，碰上浏览器把粤语音色排前面，
+   *    就会用粤语念「主体/动作状态」，听起来完全不是普通话。
+   * 2. 和英文音色同源（在线配在线、本地配本地），避免 Chromium 切引擎时卡住。
+   * 3. 名字像自然音色的靠前。 */
   function zhVoices(enVoice) {
-    const same = voices.filter(v => v.lang && v.lang.replace('_', '-').toLowerCase().startsWith('zh'));
-    if (!same.length) return [];
+    const zh = voices.filter(v => v.lang && /^zh\b/i.test(v.lang.replace('_', '-')));
+    if (!zh.length) return [];
+    const langOf = v => v.lang.replace('_', '-').toLowerCase();
+    const tier = v => {
+      const l = langOf(v);
+      if (l === 'zh-cn' || l.indexOf('zh-cn-') === 0) return 0;   // 普通话
+      if (l === 'zh-tw' || l.indexOf('zh-tw-') === 0) return 1;   // 台湾国语
+      return 2;                                                   // 粤语等
+    };
     const good = v => /Natural|Enhanced|Premium|Xiaoxiao|Tingting|Huihui|Yaoyao|Google|Microsoft/i.test(v.name);
-    const aligned = enVoice ? same.filter(v => v.localService === enVoice.localService) : same.slice();
-    const rest = same.filter(v => aligned.indexOf(v) < 0);
-    return aligned.filter(good).concat(aligned.filter(v => !good(v)), rest.filter(good), rest.filter(v => !good(v)));
+    const score = v => tier(v) * 4
+      + (enVoice && v.localService === enVoice.localService ? 0 : 2)
+      + (good(v) ? 0 : 1);
+    return zh.slice().sort((a, b) => score(a) - score(b));
   }
 
   const CN_CHAR = /[\u4e00-\u9fa5]/;
@@ -304,7 +314,8 @@
         if (token !== speakToken) return;
         const voice = cands[ci] || null;
         const u = new SpeechSynthesisUtterance(p.clean);
-        u.lang = isCn ? 'zh-CN' : S.settings.accent;
+        // lang 跟着选中的音色走：挑到台湾国语/粤语时别硬写 zh-CN，否则引擎会串味
+        u.lang = isCn ? (voice && voice.lang ? voice.lang : 'zh-CN') : S.settings.accent;
         u.rate = rate;
         if (voice) u.voice = voice;
 
