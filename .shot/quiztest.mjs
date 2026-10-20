@@ -41,6 +41,24 @@ check('题源卡片数 = 9', (await cnt('.qz-pick-card')) === 9, await cnt('.qz-
 check('有"大作文模板"题源', (await txt('.qz-pick')).includes('大作文模板'), (await txt('.qz-pick')).slice(0,80));
 check('有累计统计', (await cnt('.qz-overview div')) === 4, await cnt('.qz-overview div'));
 
+console.log('\n== 出题方式：随机 / 顺序 ==');
+check('默认是随机', (await ev("document.querySelector('[data-qmode=random]').className")).includes('active'));
+check('随机模式没有从头开始', (await cnt('#qzResetOrder')) === 0, await cnt('#qzResetOrder'));
+await click('[data-qmode="order"]'); await sleep(450);
+check('可切到顺序', (await ev("document.querySelector('[data-qmode=order]').className")).includes('active'));
+check('顺序模式出现从头开始', (await cnt('#qzResetOrder')) === 1, await cnt('#qzResetOrder'));
+check('卡片显示下次从第几句起', (await txt('.qz-pick-card .qz-pick-n')).includes('下次从第'), await txt('.qz-pick-card .qz-pick-n'));
+await click('[data-src="small-all"]'); await sleep(700);
+check('顺序模式带范围标签', (await txt('.qz-mode-tag')).includes('顺序'), await txt('.qz-mode-tag'));
+check('第一题是句库第一句', (await txt('.qz-cn')).includes('希望你一切安好'), await txt('.qz-cn'));
+check('顺序进度已记到 10', (await ev("(JSON.parse(localStorage.getItem('sunset-desk-v1')).quiz.seq||{})['small-all']")) === 10, await ev("(JSON.parse(localStorage.getItem('sunset-desk-v1')).quiz.seq||{})['small-all']"));
+await ev("(()=>{const b=document.querySelector('#qzQuit');if(b)window.confirm=()=>true;b&&b.click();return 1;})()"); await sleep(500);
+check('回到选择页仍在顺序模式', (await ev("document.querySelector('[data-qmode=order]').className")).includes('active'));
+await click('#qzResetOrder'); await sleep(450);
+check('从头开始清空进度', (await ev("JSON.stringify(JSON.parse(localStorage.getItem('sunset-desk-v1')).quiz.seq)")) === '{}', await ev("JSON.stringify(JSON.parse(localStorage.getItem('sunset-desk-v1')).quiz.seq)"));
+await click('[data-qmode="random"]'); await sleep(450);
+check('可切回随机', (await ev("document.querySelector('[data-qmode=random]').className")).includes('active'));
+
 console.log('\n== 开始一轮 ==');
 await click('[data-src="big"]'); await sleep(700);
 check('进入答题界面', (await cnt('.qz-shell')) === 1);

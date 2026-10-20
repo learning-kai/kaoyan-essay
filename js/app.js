@@ -72,7 +72,8 @@
     rate: 0.9,
     accent: 'en-US',
     size: 'm',
-    mode: 'blank'
+    mode: 'blank',
+    quizMode: 'random'
   });
 
   let S;
@@ -750,6 +751,11 @@
   };
 
   S.quiz = S.quiz || { total: 0, correct: 0, best: 0, bestCombo: 0 };
+  S.quiz.seq = S.quiz.seq || {};   // 顺序模式：每个题源练到第几句
+
+  /* 出题方式：random 随机抽 10 句 / order 按句库顺序往下走 */
+  const quizMode = () => (S.settings.quizMode === 'order' ? 'order' : 'random');
+  const QUIZ_ROUND = 10;
 
   /* 题源：模板按段、句库按类型、句型素材 */
   function quizSources() {
@@ -785,23 +791,41 @@
   }
 
   const tileSplit = s => String(s).trim().split(/\s+/).filter(Boolean);
+  /* 一个题源里真正能出题的句子（太短的排除），随机和顺序共用同一份 */
+  const quizPool = src => src.items.filter(it => it && it.en && tileSplit(it.en).length >= 3);
 
   let quiz = null;
   let quizSource = null;
+  let quizRoundMode = 'random';
 
-  function startQuiz(sourceId) {
+  function startQuiz(sourceId, mode) {
     const srcs = quizSources();
     if (!srcs.length) { toast('还没有可以练的句子'); return; }
     const src = srcs.find(s => s.id === sourceId) || srcs[0];
     quizSource = src.id;
+    quizRoundMode = mode === 'order' ? 'order' : quizMode();
 
-    const pool = src.items.filter(it => it && it.en && tileSplit(it.en).length >= 3);
-    const picked = shuffle(pool).slice(0, Math.min(10, pool.length));
-    if (!picked.length) { toast('这个题源太短了'); return; }
+    const pool = quizPool(src);
+    if (!pool.length) { toast('这个题源太短了'); return; }
+
+    let picked, from = 0, to = 0;
+    if (quizRoundMode === 'order') {
+      // 从上次停下的地方接着走，走到末尾再回到开头
+      let start = (S.quiz.seq[src.id] || 0) % pool.length;
+      to = Math.min(start + QUIZ_ROUND, pool.length);
+      from = start + 1;
+      picked = pool.slice(start, to);
+      S.quiz.seq[src.id] = to % pool.length;
+      save();
+    } else {
+      picked = shuffle(pool).slice(0, Math.min(QUIZ_ROUND, pool.length));
+    }
 
     const others = allQuizSentences();
     quiz = {
       title: src.name,
+      mode: quizRoundMode,
+      readyRange: quizRoundMode === 'order' ? `${from}–${to} / ${pool.length}` : '',
       items: picked.map((it, i) => {
         const types = ['build', 'build', 'listen', 'build', 'choice'];
         return {
@@ -875,7 +899,10 @@
         </div>
 
         <div class="qz-card">
-          <div class="qz-type">${it.type === 'listen' ? '听音频，拼出句子' : it.type === 'choice' ? '选出正确的那句' : '把下面这句中文翻成英文'}</div>
+          <div class="qz-type">
+            <span>${it.type === 'listen' ? '听音频，拼出句子' : it.type === 'choice' ? '选出正确的那句' : '把下面这句中文翻成英文'}</span>
+            <span class="qz-mode-tag ${quiz.mode === 'order' ? 'order' : ''}">${quiz.mode === 'order' ? '顺序 ' + esc(quiz.readyRange) : '随机'}</span>
+          </div>
 
           ${it.type === 'listen'
             ? `<button class="qz-play" id="qzPlay">🔊 点这里听</button>`
@@ -1032,21 +1059,37 @@
           <button class="ghost-btn" id="qzBack">换个题源</button>
         </div>
       </div>`;
-    $('#qzAgain').onclick = () => startQuiz(quizSource);
+    $('#qzAgain').onclick = () => startQuiz(quizSource, quizRoundMode);
     $('#qzBack').onclick = () => { quiz = null; renderQuiz(); };
   }
 
   function renderQuizPicker(host) {
     const srcs = quizSources();
     const acc = S.quiz.total ? Math.round(S.quiz.correct / S.quiz.total * 100) : 0;
+    const mode = quizMode();
     host.innerHTML = `
+      <div class="qz-modebar">
+        <span class="qz-modebar-label">出题方式</span>
+        <div class="seg" id="qzMode">
+          <button data-qmode="random" class="${mode === 'random' ? 'active' : ''}">随机</button>
+          <button data-qmode="order" class="${mode === 'order' ? 'active' : ''}">顺序</button>
+        </div>
+        <span class="qz-modebar-hint">${mode === 'order'
+          ? '按句库顺序往下走，每轮 10 句，练到哪记到哪。'
+          : '每轮从整个题源里随机抽 10 句。'}</span>
+        ${mode === 'order' ? '<button class="ghost-btn qz-reset" id="qzResetOrder">从头开始</button>' : ''}
+      </div>
       <div class="qz-pick">
-        ${srcs.map(s => `
-          <button class="qz-pick-card" data-src="${s.id}">
+        ${srcs.map(s => {
+          const n = quizPool(s).length;
+          const at = n ? (S.quiz.seq[s.id] || 0) % n : 0;
+          const sub = mode === 'order' ? `${n} 句 · 下次从第 ${at + 1} 句起` : `${n} 句`;
+          return `<button class="qz-pick-card" data-src="${s.id}">
             <span class="qz-pick-name">${esc(s.name)}</span>
-            <span class="qz-pick-n">${s.items.length} 句</span>
-            <span class="qz-pick-go">开始 →</span>
-          </button>`).join('')}
+            <span class="qz-pick-n">${sub}</span>
+            <span class="qz-pick-go">${mode === 'order' ? '接着往下练 →' : '开始 →'}</span>
+          </button>`;
+        }).join('')}
       </div>
       <div class="qz-overview">
         <div><b>${S.quiz.total}</b><span>累计答题</span></div>
@@ -1056,6 +1099,13 @@
       </div>
       <p class="hint small">每轮 10 题：点词块拼句、听音频拼句、四选一。答错的句子会排到队尾，本次再来一遍。</p>`;
 
+    $$('[data-qmode]', host).forEach(b => b.onclick = () => {
+      S.settings.quizMode = b.dataset.qmode;
+      save();
+      renderQuiz();
+    });
+    const reset = $('#qzResetOrder', host);
+    if (reset) reset.onclick = () => { S.quiz.seq = {}; save(); renderQuiz(); toast('顺序进度已清零，从第一句重新开始'); };
     $$('.qz-pick-card', host).forEach(b => b.onclick = () => startQuiz(b.dataset.src));
   }
 
