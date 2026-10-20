@@ -905,7 +905,16 @@
 
           ${it.misses ? `<div class="qz-retry">
             <span class="qz-retry-txt">✗ 这次没拼对，已经清空，再拼一次就行</span>
-            <button class="ghost-btn qz-reveal" id="qzReveal">看答案</button>
+            <button class="ghost-btn qz-reveal" id="qzReveal">${it.revealed ? '收起答案' : '看答案'}</button>
+          </div>` : ''}
+
+          ${it.revealed ? `<div class="qz-revealed" id="qzRevealed">
+            <p class="qz-revealed-en">${esc(it.en)}</p>
+            ${it.type === 'listen' && it.cn ? `<p class="qz-revealed-cn">${esc(it.cn)}</p>` : ''}
+            <div class="qz-revealed-foot">
+              <span class="qz-revealed-hint">照着答案把词块再拼一遍，然后点「检查」；不想拼就跳过。</span>
+              <button class="ghost-btn qz-skip" id="qzSkip">跳过这题</button>
+            </div>
           </div>` : ''}
 
           ${it.type === 'listen'
@@ -979,7 +988,18 @@
     const play = $('#qzPlay');
     if (play) play.onclick = () => speak(it.en);
     const reveal = $('#qzReveal');
-    if (reveal) reveal.onclick = () => revealAnswer(it);
+    if (reveal) reveal.onclick = () => {
+      it.revealed = !it.revealed;
+      renderQuiz();   // 重渲染但保留已点词块，答案收起/展开不影响继续拼
+    };
+    const skip = $('#qzSkip');
+    if (skip) skip.onclick = () => {
+      it.solved = true;
+      it.result = false;
+      quiz.i++;
+      if (quiz.i >= quiz.items.length) { quiz.finished = true; finishQuiz(); }
+      renderQuiz();
+    };
     $('#qzQuit').onclick = () => { if (confirm('退出这轮练习？进度不保留')) { quiz = null; renderQuiz(); } };
     const ckBtn = $('#qzCheck');
     if (ckBtn) ckBtn.onclick = () => {
@@ -989,21 +1009,18 @@
     };
   }
 
-  /* 结算反馈：对了直接给「继续」；看答案时补上原句 */
-  function renderFeedback(it, ok, withAnswer) {
+  /* 答对的结算反馈 */
+  function renderFeedback(it) {
     const fb = $('#qzFeedback');
     if (!fb) return;
-    const answerHTML = `<p class="qz-fb-en">${esc(it.en)}</p>
-      ${it.cn ? `<p class="qz-fb-cn">${esc(it.cn)}</p>` : ''}`;
     fb.hidden = false;
-    fb.className = 'qz-feedback ' + (ok ? 'ok' : 'bad') + ' show';
+    fb.className = 'qz-feedback ok show';
     fb.innerHTML = `
       <div class="qz-fb-head">
-        <span class="qz-fb-title">${ok ? '✓ 对了' : '正确答案'}</span>
-        ${ok && quiz.combo >= 3 ? `<span class="qz-fb-combo">🔥 连对 ${quiz.combo}</span>` : ''}
+        <span class="qz-fb-title">✓ 对了</span>
+        ${quiz.combo >= 3 ? `<span class="qz-fb-combo">🔥 连对 ${quiz.combo}</span>` : ''}
         <button class="ghost-btn" id="qzSpeak">🔊</button>
       </div>
-      ${withAnswer ? answerHTML : ''}
       <button class="primary-btn big" id="qzNext">继续</button>`;
     $('#qzSpeak').onclick = () => speak(it.en);
     $('#qzNext').onclick = () => {
@@ -1011,17 +1028,6 @@
       if (quiz.i >= quiz.items.length) { quiz.finished = true; finishQuiz(); }
       renderQuiz();
     };
-  }
-
-  /* 不想再拼了：直接摊开答案，这题记作没做对 */
-  function revealAnswer(it) {
-    it.solved = true;
-    it.result = false;
-    const bar = document.querySelector('.qz-retry');
-    if (bar) bar.remove();
-    saveSoft();
-    logStudy();
-    renderFeedback(it, false, true);
   }
 
   function settle(ok, it) {
@@ -1042,7 +1048,7 @@
       sfxRight();
       saveSoft();
       logStudy();
-      renderFeedback(it, true, false);
+      renderFeedback(it);
       return;
     }
 

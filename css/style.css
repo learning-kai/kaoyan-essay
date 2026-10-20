@@ -685,6 +685,33 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
 }
 .qz-retry-txt { font-family: var(--cjk); font-size: 13.5px; color: var(--bad); line-height: 1.6; flex: 1 1 180px; }
 .qz-reveal { font-size: 12.5px; padding: 4px 12px; }
+
+/* 看答案：摊开原句，但题目仍可继续拼 */
+.qz-revealed {
+  margin: -4px 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px dashed rgba(226,88,43,.5);
+  background: rgba(226,88,43,.05);
+}
+.qz-revealed-en {
+  font-family: var(--serif);
+  font-size: calc(var(--fs) * .92);
+  line-height: 1.7;
+  color: var(--ink);
+  margin: 0 0 4px;
+  word-break: break-word;
+}
+.qz-revealed-cn {
+  font-family: var(--cjk);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-3);
+  margin: 0 0 10px;
+}
+.qz-revealed-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.qz-revealed-hint { font-family: var(--cjk); font-size: 12.5px; color: var(--ink-3); line-height: 1.6; flex: 1 1 180px; }
+.qz-skip { font-size: 12.5px; padding: 4px 12px; }
 .qz-cn {
   font-family: var(--cjk);
   font-size: clamp(17px, 1vw + 12px, 21px);

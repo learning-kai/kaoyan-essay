@@ -149,15 +149,26 @@ if (badNow) {
   check('第二次答对是绿色反馈', (await ev("document.querySelector('#qzFeedback').className")).includes('ok'), await ev("document.querySelector('#qzFeedback').className"));
   await click('#qzNext'); await sleep(500);
 
-  // 「看答案」逃生口
+  // 「看答案」：摊开原句，但题目仍可继续拼、继续检查
   if ((await cnt('#qzBank .qz-tile')) > 0) {
     await ev("(()=>{const t=document.querySelector('#qzBank .qz-tile');if(t)t.click();return 1;})()");
     await sleep(120);
     await click('#qzCheck'); await sleep(450);
     check('下一题答错也有重来提示', (await cnt('.qz-retry')) === 1, await cnt('.qz-retry'));
     await click('#qzReveal'); await sleep(400);
-    check('看答案能摊开原句', (await txt('.qz-fb-en')).length > 5, await txt('.qz-fb-en'));
-    check('看答案后可以继续', (await cnt('#qzNext')) === 1);
+    check('看答案能摊开原句', (await txt('.qz-revealed-en')).length > 5, await txt('.qz-revealed-en'));
+    check('看答案不算过关', (await cnt('#qzNext')) === 0, await cnt('#qzNext'));
+    check('看答案后题目还在', (await cnt('#qzCheck')) === 1);
+    check('看答案后仍有跳过出口', (await cnt('#qzSkip')) === 1);
+    await click('#qzReveal'); await sleep(350);
+    check('看答案可以收起', (await cnt('.qz-revealed')) === 0, await cnt('.qz-revealed'));
+    await click('#qzReveal'); await sleep(350);
+    // 照着答案再拼一遍，然后还能检查
+    const r3 = await solveBuild();
+    check('看答案后能重新拼', r3.ok, r3.target);
+    await click('#qzCheck'); await sleep(500);
+    check('看答案后能再检查并过关', (await cnt('.qz-feedback.show')) === 1, await cnt('.qz-feedback.show'));
+    check('过关后是绿色反馈', (await ev("document.querySelector('#qzFeedback').className")).includes('ok'), await ev("document.querySelector('#qzFeedback').className"));
     await click('#qzNext'); await sleep(400);
   }
 } else {
@@ -170,8 +181,13 @@ let steps = 0;
 while (steps++ < 80) {
   if (await cnt('.qz-done')) break;
   if ((await cnt('.qz-feedback.show')) === 0) {
-    // 上一题答错停在原地：用「看答案」跳过，避免反复重拼
-    if ((await cnt('.qz-retry')) === 1) { await click('#qzReveal'); await sleep(320); continue; }
+    // 上一题答错停在原地：展开答案后「跳过这题」往前走，避免反复重拼
+    if ((await cnt('.qz-retry')) === 1) {
+      if ((await cnt('#qzSkip')) === 0) { await click('#qzReveal'); await sleep(260); }
+      await click('#qzSkip');
+      await sleep(320);
+      continue;
+    }
     // 有新题，尽量做对
     const isChoice = (await cnt('.qz-opt')) > 0;
     if (isChoice) {
