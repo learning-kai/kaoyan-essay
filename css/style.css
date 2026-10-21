@@ -389,6 +389,25 @@ textarea:focus, select:focus, input:focus { outline: 2px solid rgba(226,88,43,.3
 .tpl-meta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; padding-top: 6px; }
 .tpl-meta b { font-family: var(--serif); font-size: 16px; color: var(--solar-deep); }
 
+.tpl-logic {
+  margin: 18px 0 0;
+  padding: 13px 16px;
+  border: 1px dashed rgba(226,88,43,.38);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,.45);
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.9;
+}
+.tpl-logic b {
+  display: inline-block;
+  margin-right: 10px;
+  color: var(--solar-deep);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.tpl-actions { margin-top: 12px; }
+
 .tpl-section { margin-top: 34px; }
 .tpl-sec-head { display: flex; align-items: baseline; gap: 12px; }
 .tpl-no {

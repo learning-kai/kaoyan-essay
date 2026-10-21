@@ -498,6 +498,8 @@
         </div>
         <div class="tpl-meta"><b>${total}</b> 句 · <b>${words}</b> 词${p && p.stage ? ' · ' + stageLabel(p) : ''}</div>
       </div>
+      ${t.logic ? `<p class="tpl-logic"><b>背诵逻辑链</b>${esc(t.logic)}</p>` : ''}
+      ${t.modelId ? `<div class="tpl-actions"><button class="primary-btn" id="btnModelRecite" data-essay="${esc(t.modelId)}">先背母版《传统文化》 →</button></div>` : ''}
       ${t.sections.map((sec, si) => `
         <section class="tpl-section">
           <div class="tpl-sec-head">
@@ -1412,6 +1414,9 @@
 
       const recite = e.target.closest('#btnBankRecite');
       if (recite) { openEssay(recite.dataset.essay); return; }
+
+      const model = e.target.closest('#btnModelRecite');
+      if (model) { openEssay(model.dataset.essay); return; }
 
       const say = e.target.closest('.tpl-say');
       if (say) { speak(say.closest('.tpl-item').dataset.en); return; }
